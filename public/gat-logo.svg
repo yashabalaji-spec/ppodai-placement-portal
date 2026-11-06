@@ -1,0 +1,88 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 320" width="100%" height="100%">
+  <!-- Definitions for gradients and clips -->
+  <defs>
+    <radialGradient id="globeGrad" cx="45%" cy="40%" r="55%">
+      <stop offset="0%" stop-color="#243b82"/>
+      <stop offset="70%" stop-color="#182b68"/>
+      <stop offset="100%" stop-color="#0f1d4a"/>
+    </radialGradient>
+    <clipPath id="globeClip">
+      <circle cx="150" cy="95" r="54" />
+    </clipPath>
+  </defs>
+
+  <!-- Globe Base Sphere -->
+  <circle cx="150" cy="95" r="54" fill="url(#globeGrad)" />
+
+  <!-- Inside the Globe: Grid Lines and Continents (clipped to sphere) -->
+  <g clip-path="url(#globeClip)">
+    <!-- Longitude meridians -->
+    <ellipse cx="150" cy="95" rx="18" ry="54" fill="none" stroke="#7e9bd1" stroke-width="0.8" opacity="0.6"/>
+    <ellipse cx="150" cy="95" rx="36" ry="54" fill="none" stroke="#7e9bd1" stroke-width="0.8" opacity="0.6"/>
+    <line x1="150" y1="41" x2="150" y2="149" stroke="#7e9bd1" stroke-width="0.8" opacity="0.6"/>
+
+    <!-- Latitude parallels -->
+    <ellipse cx="150" cy="72" rx="48" ry="12" fill="none" stroke="#7e9bd1" stroke-width="0.8" opacity="0.6"/>
+    <ellipse cx="150" cy="95" rx="54" ry="14" fill="none" stroke="#7e9bd1" stroke-width="0.8" opacity="0.6"/>
+    <ellipse cx="150" cy="118" rx="48" ry="12" fill="none" stroke="#7e9bd1" stroke-width="0.8" opacity="0.6"/>
+
+    <!-- Continents in Official Gold-Yellow (#d4cf38) -->
+    <!-- Eurasia & Central/East Asia -->
+    <path d="M125,58 C132,54 142,52 155,54 C168,56 182,60 192,68 C198,74 200,82 195,88 C190,92 182,90 176,85 C170,82 165,85 158,80 C152,76 145,78 138,72 C132,66 128,62 125,58 Z" fill="#d4cf38"/>
+    
+    <!-- India Subcontinent & South Asia -->
+    <path d="M142,76 C146,74 152,78 154,84 C155,90 150,96 146,102 C143,96 140,88 138,82 C139,78 140,76 142,76 Z" fill="#d4cf38"/>
+    
+    <!-- Southeast Asia & Maritime -->
+    <path d="M168,88 C172,86 178,90 182,94 C184,98 180,102 176,102 C172,100 166,94 168,88 Z" fill="#d4cf38"/>
+    <circle cx="186" cy="106" r="3.5" fill="#d4cf38"/>
+    <circle cx="174" cy="108" r="2.8" fill="#d4cf38"/>
+
+    <!-- Middle East & North Africa edge -->
+    <path d="M112,68 C118,65 124,70 126,76 C128,82 122,88 116,92 C112,86 110,76 112,68 Z" fill="#d4cf38"/>
+
+    <!-- Australia & Pacific Islands -->
+    <path d="M178,114 C184,110 192,112 196,118 C198,124 192,130 185,130 C180,128 176,120 178,114 Z" fill="#d4cf38"/>
+
+    <!-- Additional Asian landmass details -->
+    <path d="M148,64 C154,60 162,62 168,66 C164,72 156,72 148,64 Z" fill="#d4cf38"/>
+  </g>
+
+  <!-- Orbital Ring 1: Top-Left to Bottom-Right -->
+  <!-- Back/Left lobe -->
+  <path d="M72,62 C60,78 62,98 84,116 C106,134 135,142 168,138" fill="none" stroke="#a4c2eb" stroke-width="1.8" stroke-linecap="round"/>
+  <!-- Front/Right lobe -->
+  <path d="M168,138 C195,134 224,120 236,100 C246,84 240,68 218,54 C192,38 152,42 120,54 L128,58" fill="none" stroke="#d5e3f7" stroke-width="2.2" stroke-linecap="round"/>
+  <path d="M100,68 L200,122" fill="none" stroke="#ffffff" stroke-width="1.8" stroke-linecap="round" opacity="0.9"/>
+
+  <!-- Orbital Ring 2: Top-Right to Bottom-Left -->
+  <!-- Back/Right lobe -->
+  <path d="M228,62 C240,78 238,98 216,116 C194,134 165,142 132,138" fill="none" stroke="#a4c2eb" stroke-width="1.8" stroke-linecap="round"/>
+  <!-- Front/Left lobe -->
+  <path d="M132,138 C105,134 76,120 64,100 C54,84 60,68 82,54 C108,38 148,42 180,54 L172,58" fill="none" stroke="#d5e3f7" stroke-width="2.2" stroke-linecap="round"/>
+  <path d="M200,68 L100,122" fill="none" stroke="#ffffff" stroke-width="1.8" stroke-linecap="round" opacity="0.9"/>
+
+  <!-- Crossing point highlights -->
+  <ellipse cx="150" cy="95" rx="3.5" ry="3.5" fill="#ffffff" opacity="0.7"/>
+
+  <!-- TYPOGRAPHY -->
+  <!-- Line 1: GLOBAL ACADEMY -->
+  <text x="150" y="200" text-anchor="middle" font-family="'Plus Jakarta Sans', system-ui, -apple-system, sans-serif" font-size="21" font-weight="800" fill="#2d3748" letter-spacing="1.5">
+    GLOBAL ACADEMY
+  </text>
+
+  <!-- Line 2: OF TECHNOLOGY -->
+  <text x="150" y="228" text-anchor="middle" font-family="'Plus Jakarta Sans', system-ui, -apple-system, sans-serif" font-size="20" font-weight="800" fill="#2d3748" letter-spacing="1.8">
+    OF TECHNOLOGY
+  </text>
+
+  <!-- Line 3: growing ahead of time -->
+  <text x="150" y="254" text-anchor="middle" font-family="'Plus Jakarta Sans', system-ui, -apple-system, sans-serif" font-size="12" font-style="italic" font-weight="500" fill="#5a6a85" letter-spacing="0.5">
+    growing ahead of time
+  </text>
+
+  <!-- Line 4: Autonomous Institute, Affiliated to VTU -->
+  <text x="150" y="278" text-anchor="middle" font-family="Georgia, Cambria, 'Times New Roman', serif" font-size="11" font-style="normal" font-weight="400" fill="#6c7a92" letter-spacing="0.2">
+    Autonomous Institute, Affiliated to VTU
+  </text>
+</svg>

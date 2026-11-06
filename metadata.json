@@ -1,0 +1,6 @@
+{
+  "name": "Placement Portal / GAT PPODAI",
+  "description": "Unified Placement Portal & Decision AI dashboard for GAT with 11 role-based logins, comprehensive student profiles, JD skill-matching engine with PDF reports, and real-time placement analytics.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
