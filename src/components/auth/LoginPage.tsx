@@ -44,6 +44,16 @@ export const LoginPage: React.FC<LoginPageProps> = ({
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  // Forgot Password states
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
+  const [forgotIdentifier, setForgotIdentifier] = useState('');
+  const [forgotOtp, setForgotOtp] = useState('');
+  const [demoOtp, setDemoOtp] = useState('');
+  const [forgotMessage, setForgotMessage] = useState('');
+  const [isRequestingOtp, setIsRequestingOtp] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmNewPassword, setConfirmNewPassword] = useState('');
+  const [isResettingPassword, setIsResettingPassword] = useState(false);
 
   // When user clicks one of the 4 big portal mode cards:
   const handlePortalModeSelect = (mode: PortalMode) => {
@@ -112,6 +122,103 @@ export const LoginPage: React.FC<LoginPageProps> = ({
     setErrorMessage('Unable to connect to the server. Please try again.');
   } finally {
     setIsLoggingIn(false);
+  }
+};
+
+// PASTE THE NEW handleForgotPassword FUNCTION HERE
+const handleForgotPassword = async () => {
+  if (!forgotIdentifier.trim()) {
+    setForgotMessage('Please enter your registered ID, USN or email.');
+    return;
+  }
+
+  setIsRequestingOtp(true);
+  setForgotMessage('');
+  setDemoOtp('');
+
+  try {
+    const response = await fetch('/api/auth/forgot-password', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      credentials: 'same-origin',
+      body: JSON.stringify({
+        identifier: forgotIdentifier.trim()
+      })
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      setForgotMessage(data.message || 'Unable to request OTP.');
+      return;
+    }
+
+    setForgotMessage(data.message || 'OTP request processed.');
+
+    if (data.demoOtp) {
+      setDemoOtp(data.demoOtp);
+    }
+  } catch (error) {
+    console.error('Forgot password request failed:', error);
+    setForgotMessage('Unable to connect to the server. Please try again.');
+  } finally {
+    setIsRequestingOtp(false);
+  }
+};
+
+const handleResetPassword = async () => {
+  setForgotMessage('');
+
+  if (!/^\d{6}$/.test(forgotOtp)) {
+    setForgotMessage('Enter the six-digit OTP.');
+    return;
+  }
+
+  if (newPassword.length < 12) {
+    setForgotMessage('Password must contain at least 12 characters.');
+    return;
+  }
+
+  if (newPassword !== confirmNewPassword) {
+    setForgotMessage('Passwords do not match.');
+    return;
+  }
+
+  setIsResettingPassword(true);
+
+  try {
+    const response = await fetch('/api/auth/reset-password', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      credentials: 'same-origin',
+      body: JSON.stringify({
+        identifier: forgotIdentifier.trim(),
+        otp: forgotOtp,
+        newPassword
+      })
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      setForgotMessage(data.message || 'Password reset failed.');
+      return;
+    }
+
+    setForgotMessage('Password reset successfully! You can now sign in.');
+    setForgotOtp('');
+    setNewPassword('');
+    setConfirmNewPassword('');
+    setDemoOtp('');
+  } catch (error) {
+    console.error('Password reset request failed:', error);
+    setForgotMessage('Unable to connect to the server. Please try again.');
+  } finally {
+    setIsResettingPassword(false);
   }
 };
 
@@ -370,7 +477,21 @@ export const LoginPage: React.FC<LoginPageProps> = ({
                   </button>
                 </div>
               </div>
-
+              {/* Forgot Password Link */}
+              <div className="flex justify-end">
+              <button
+              type="button"
+              onClick={() => {
+              setForgotIdentifier(specialIdInput);
+              setForgotMessage('');
+              setDemoOtp('');
+              setShowForgotPassword(true);
+             }}
+             className="text-xs font-semibold text-[#0C2C47] hover:text-[#2D5652] hover:underline"
+             >
+             Forgot Password?
+             </button>
+             </div>
               {/* Error message */}
               {errorMessage && (
                 <div className="p-2.5 rounded-lg bg-red-50 border border-red-200 text-xs text-red-800 flex items-start gap-2">
@@ -394,6 +515,120 @@ export const LoginPage: React.FC<LoginPageProps> = ({
 
         </div>
       </div>
+{/* Forgot Password Popup */}
+{showForgotPassword && (
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
+    <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+      <div className="mb-4 flex items-center justify-between">
+        <h2 className="text-lg font-bold text-[#0C2C47]">
+          Reset Password
+        </h2>
+        <button
+          type="button"
+          onClick={() => setShowForgotPassword(false)}
+          className="text-xl text-gray-500 hover:text-gray-800"
+        >
+          ×
+        </button>
+      </div>
+
+      <p className="mb-4 text-sm text-gray-600">
+        Enter your registered ID, USN or email to request a password-reset OTP.
+      </p>
+
+      <label className="mb-1 block text-xs font-bold text-[#0C2C47]">
+        Registered ID / USN / Email
+      </label>
+
+      <input
+        type="text"
+        value={forgotIdentifier}
+        onChange={(e) => setForgotIdentifier(e.target.value)}
+        placeholder="Enter your registered ID or email"
+        className="mb-4 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+      />
+
+      <button
+        type="button"
+        onClick={handleForgotPassword}
+        disabled={isRequestingOtp}
+        className="w-full rounded-lg bg-[#0C2C47] px-4 py-2.5 text-sm font-bold text-white disabled:opacity-60"
+      >
+        {isRequestingOtp ? 'Requesting OTP...' : 'Request OTP'}
+      </button>
+
+      {demoOtp && (
+        <div className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-3">
+          <p className="text-xs font-bold text-amber-900">
+            DEMO OTP — DEVELOPMENT ONLY
+          </p>
+          <p className="mt-1 text-lg font-bold tracking-widest text-amber-900">
+            {demoOtp}
+          </p>
+        </div>
+      )}
+{demoOtp && (
+  <div className="mt-4 space-y-3">
+    <div>
+      <label className="mb-1 block text-xs font-bold text-[#0C2C47]">
+        Enter 6-digit OTP
+      </label>
+      <input
+        type="text"
+        inputMode="numeric"
+        maxLength={6}
+        value={forgotOtp}
+        onChange={(e) => setForgotOtp(e.target.value.replace(/\D/g, ''))}
+        placeholder="Enter OTP"
+        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+      />
+    </div>
+
+    <div>
+      <label className="mb-1 block text-xs font-bold text-[#0C2C47]">
+        New Password
+      </label>
+      <input
+        type="password"
+        value={newPassword}
+        onChange={(e) => setNewPassword(e.target.value)}
+        placeholder="Minimum 12 characters"
+        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+      />
+    </div>
+
+    <div>
+      <label className="mb-1 block text-xs font-bold text-[#0C2C47]">
+        Confirm New Password
+      </label>
+      <input
+        type="password"
+        value={confirmNewPassword}
+        onChange={(e) => setConfirmNewPassword(e.target.value)}
+        placeholder="Re-enter new password"
+        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+      />
+    </div>
+
+    <button
+      type="button"
+      onClick={handleResetPassword}
+      disabled={isResettingPassword}
+      className="w-full rounded-lg bg-[#2D5652] px-4 py-2.5 text-sm font-bold text-white disabled:opacity-60"
+    >
+      {isResettingPassword ? 'Resetting Password...' : 'Reset Password'}
+    </button>
+  </div>
+)}
+
+      {forgotMessage && (
+        <p className="mt-3 text-sm text-[#2D5652]">
+          {forgotMessage}
+        </p>
+      )}
+    </div>
+  </div>
+)}
 
       {/* Footer */}
       <footer className="py-3 border-t border-[#97D3CD]/30 bg-white text-center text-xs text-[#2D5652] px-4">

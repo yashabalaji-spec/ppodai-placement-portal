@@ -1,6 +1,7 @@
 import express from 'express';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 import cookieParser from 'cookie-parser';
 import { pool } from './db';
 import { connectMongoDB } from './mong';
@@ -109,6 +110,242 @@ app.post('/api/auth/login', async (req, res) => {
   } catch (error) {
     console.error('Login error:', error);
     return res.status(500).json({ message: 'Login failed. Please try again.' });
+  }
+});
+// Request a password-reset OTP.
+app.post('/api/auth/forgot-password', async (req, res) => {
+  try {
+    const { identifier } = req.body;
+
+    if (typeof identifier !== 'string' || !identifier.trim()) {
+      return res.status(400).json({
+        message: 'Enter your registered ID or email.'
+      });
+    }
+
+    const secret = process.env.JWT_SECRET;
+    const demoEnabled =
+      process.env.NODE_ENV !== 'production' &&
+      process.env.ENABLE_DEMO_OTP === 'true';
+
+    if (!secret) {
+      return res.status(500).json({
+        message: 'Password recovery is not configured.'
+      });
+    }
+
+    const input = identifier.trim();
+
+    const result = await pool.query(
+      `SELECT id
+       FROM users
+       WHERE is_active IS TRUE
+         AND (
+           UPPER(COALESCE(special_id, '')) = UPPER($1)
+           OR UPPER(COALESCE(usn, '')) = UPPER($1)
+           OR LOWER(email) = LOWER($1)
+         )
+       LIMIT 1`,
+      [input]
+    );
+
+    const account = result.rows[0];
+
+    if (!account) {
+      return res.json({
+        success: true,
+        message: 'If the account exists, an OTP has been generated.'
+      });
+    }
+
+    const recentRequests = await pool.query(
+      `SELECT COUNT(*)::int AS count
+       FROM password_reset_otps
+       WHERE user_id = $1
+         AND created_at > NOW() - INTERVAL '15 minutes'`,
+      [account.id]
+    );
+
+    if (recentRequests.rows[0].count >= 3) {
+      return res.status(429).json({
+        message: 'Too many OTP requests. Try again after 15 minutes.'
+      });
+    }
+
+    const otp = crypto.randomInt(100000, 1000000).toString();
+
+    const otpHash = crypto
+      .createHmac('sha256', secret)
+      .update(`${account.id}:${otp}`)
+      .digest('hex');
+
+    await pool.query(
+      `UPDATE password_reset_otps
+       SET used_at = NOW()
+       WHERE user_id = $1 AND used_at IS NULL`,
+      [account.id]
+    );
+
+    await pool.query(
+      `INSERT INTO password_reset_otps
+       (user_id, otp_hash, expires_at)
+       VALUES ($1, $2, NOW() + INTERVAL '5 minutes')`,
+      [account.id, otpHash]
+    );
+
+    return res.json({
+      success: true,
+      message: 'If the account exists, an OTP has been generated.',
+      ...(demoEnabled ? { demoOtp: otp } : {})
+    });
+
+  } catch (error) {
+    console.error('Forgot password error:', error);
+    return res.status(500).json({
+      message: 'Could not process the request. Please try again.'
+    });
+  }
+});
+
+// Verify OTP and reset the account password.
+app.post('/api/auth/reset-password', async (req, res) => {
+  const { identifier, otp, newPassword } = req.body;
+
+  if (
+    typeof identifier !== 'string' ||
+    !identifier.trim() ||
+    typeof otp !== 'string' ||
+    !/^\d{6}$/.test(otp) ||
+    typeof newPassword !== 'string' ||
+    newPassword.length < 12
+  ) {
+    return res.status(400).json({
+      message: 'Enter a valid ID, six-digit OTP and password of at least 12 characters.'
+    });
+  }
+
+  const secret = process.env.JWT_SECRET;
+
+  if (!secret) {
+    return res.status(500).json({
+      message: 'Password recovery is not configured.'
+    });
+  }
+
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    const accountResult = await client.query(
+      `SELECT id
+       FROM users
+       WHERE is_active IS TRUE
+         AND (
+           UPPER(COALESCE(special_id, '')) = UPPER($1)
+           OR UPPER(COALESCE(usn, '')) = UPPER($1)
+           OR LOWER(email) = LOWER($1)
+         )
+       LIMIT 1`,
+      [identifier.trim()]
+    );
+
+    const account = accountResult.rows[0];
+
+    if (!account) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        message: 'Invalid or expired OTP.'
+      });
+    }
+
+    const otpResult = await client.query(
+      `SELECT id, otp_hash, expires_at, attempts
+       FROM password_reset_otps
+       WHERE user_id = $1
+         AND used_at IS NULL
+       ORDER BY created_at DESC
+       LIMIT 1
+       FOR UPDATE`,
+      [account.id]
+    );
+
+    const otpRecord = otpResult.rows[0];
+
+    if (
+      !otpRecord ||
+      otpRecord.attempts >= 5 ||
+      new Date(otpRecord.expires_at).getTime() <= Date.now()
+    ) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        message: 'Invalid or expired OTP.'
+      });
+    }
+
+    const submittedHash = crypto
+      .createHmac('sha256', secret)
+      .update(`${account.id}:${otp}`)
+      .digest();
+
+    const storedHash = Buffer.from(otpRecord.otp_hash, 'hex');
+
+    const otpMatches =
+      storedHash.length === submittedHash.length &&
+      crypto.timingSafeEqual(storedHash, submittedHash);
+
+    if (!otpMatches) {
+      const nextAttempts = otpRecord.attempts + 1;
+
+      await client.query(
+        `UPDATE password_reset_otps
+         SET attempts = $1,
+             used_at = CASE WHEN $1 >= 5 THEN NOW() ELSE used_at END
+         WHERE id = $2`,
+        [nextAttempts, otpRecord.id]
+      );
+
+      await client.query('COMMIT');
+
+      return res.status(400).json({
+        message: nextAttempts >= 5
+          ? 'Too many incorrect attempts. Request a new OTP.'
+          : 'Incorrect OTP. Please try again.'
+      });
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, 12);
+
+    await client.query(
+      `UPDATE users
+       SET password_hash = $1
+       WHERE id = $2`,
+      [passwordHash, account.id]
+    );
+
+    await client.query(
+      `UPDATE password_reset_otps
+       SET used_at = NOW()
+       WHERE user_id = $1 AND used_at IS NULL`,
+      [account.id]
+    );
+
+    await client.query('COMMIT');
+
+    return res.json({
+      success: true,
+      message: 'Password reset successfully. Please sign in with your new password.'
+    });
+
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Password reset error:', error);
+
+    return res.status(500).json({
+      message: 'Could not reset password. Please try again.'
+    });
+  } finally {
+    client.release();
   }
 });
 
@@ -853,9 +1090,26 @@ The JSON must follow this exact schema:
   }
 });
 
+
+// Retry MongoDB connection in the background.
+async function connectMongoDBInBackground() {
+  while (true) {
+    try {
+      await connectMongoDB();
+      console.log('MongoDB connected successfully!');
+      break;
+    } catch (error) {
+      console.error(
+        'MongoDB is temporarily unavailable. Retrying in 15 seconds...'
+      );
+
+      await new Promise(resolve => setTimeout(resolve, 15000));
+    }
+  }
+}
+
 // Configure Vite middleware or static serving
 async function startServer() {
-    await connectMongoDB();
   const isProd = process.env.NODE_ENV === 'production';
 
   if (!isProd) {
@@ -874,6 +1128,9 @@ async function startServer() {
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`GAT PPODAI Server running at http://localhost:${PORT}`);
   });
+
+  // MongoDB must not block website startup.
+  void connectMongoDBInBackground();
 }
 
 startServer();
