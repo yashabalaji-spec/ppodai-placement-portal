@@ -2,21 +2,17 @@ import { StudentProfile, Company, PlacementDrive, UserAccount, RoleType } from '
 import { generateAllBranchStudents } from './studentsData';
 
 export const BRANCHES = [
-  { code: 'CSE', name: 'Computer Science & Engineering', totalStrength: 180, hod: 'Dr. Suresh Kumar' },
-  { code: 'ISE', name: 'Information Science & Engineering', totalStrength: 120, hod: 'Dr. Meenakshi Sundaram' },
-  { code: 'AIML', name: 'Artificial Intelligence & Machine Learning', totalStrength: 120, hod: 'Dr. Radhika Pai' },
-  { code: 'AIDS', name: 'Artificial Intelligence & Data Science', totalStrength: 60, hod: 'Dr. Vinayaka Rao' },
-  { code: 'ECE', name: 'Electronics & Communication Engineering', totalStrength: 180, hod: 'Dr. Anand K. V.' },
-  { code: 'EEE', name: 'Electrical & Electronics Engineering', totalStrength: 60, hod: 'Dr. Shobha Rani' },
-  { code: 'ME', name: 'Mechanical Engineering', totalStrength: 60, hod: 'Dr. Manjunath Swamy' },
-  { code: 'CV', name: 'Civil Engineering', totalStrength: 60, hod: 'Dr. Girish H. N.' },
-  { code: 'BT', name: 'Biotechnology', totalStrength: 45, hod: 'Dr. Kavitha S.' },
-  { code: 'CS-CY', name: 'CS (Cyber Security)', totalStrength: 60, hod: 'Dr. Pradeep N.' },
-  { code: 'CS-IOT', name: 'CS (Internet of Things)', totalStrength: 60, hod: 'Dr. Lokesh B.' },
-  { code: 'AE', name: 'Aeronautical Engineering', totalStrength: 45, hod: 'Dr. Ramesh Chandra' },
-  { code: 'MCA', name: 'Master of Computer Applications', totalStrength: 60, hod: 'Dr. Roopa M.' },
-  { code: 'MBA', name: 'Master of Business Administration', totalStrength: 60, hod: 'Dr. Vijaylakshmi' },
-  { code: 'RA', name: 'Robotics & Automation', totalStrength: 45, hod: 'Dr. Chandrashekar' },
+  { code: 'CSE', name: 'Computer Science & Engineering', totalStrength: 180, hod: 'Dr. R Rajkumar' },
+  { code: 'ISE', name: 'Information Science & Engineering', totalStrength: 120, hod: 'Dr. Kumaraswamy S' },
+  { code: 'AIML', name: 'Artificial Intelligence & Machine Learning', totalStrength: 120, hod: 'Dr. Roopa B S' },
+  { code: 'AIDS', name: 'Artificial Intelligence & Data Science', totalStrength: 60, hod: 'Dr. Girish Rao Salanke N S' },
+  { code: 'ECE', name: 'Electronics & Communication Engineering', totalStrength: 180, hod: 'Dr. Leelavathi H P' },
+  { code: 'EEE', name: 'Electrical & Electronics Engineering', totalStrength: 60, hod: 'Dr. Deepika Masand' },
+  { code: 'ME', name: 'Mechanical Engineering', totalStrength: 60, hod: 'Dr. Ravi Kumar D. V.' },
+  { code: 'CV', name: 'Civil Engineering', totalStrength: 60, hod: 'Dr. Kiran B' },
+  { code: 'CSE(AIML)', name: 'Computer Science & Engineering (Artificial Intelligence & Machine Learning)', totalStrength: 45, hod: 'Dr. Chandramma R' },
+  { code: 'AE', name: 'Aeronautical Engineering', totalStrength: 45, hod: 'Dr. Bino Prince Raja D' },
+  { code: 'MBA', name: 'Master of Business Administration', totalStrength: 60, hod: 'Dr. Sanjeev Kumar Thalari' },
 ];
 
 export const INITIAL_STUDENTS: StudentProfile[] = generateAllBranchStudents();
@@ -46,8 +42,7 @@ const BASE_USERS: UserAccount[] = [
   // Set 2: Placement Co-ordinators
   { id: 'u5', name: 'Prof. Harish B. G.', email: 'pcc@gat.ac.in', specialId: 'PCC-OFFICER-01', password: 'pcc@gat2026', role: 'pcc', designation: 'Head - Placement Coordination Cell (PCC / PO)' },
   { id: 'u6', name: 'Prof. Divya Sharma', email: 'fpc.cse@gat.ac.in', specialId: 'FPC-CSE-01', password: 'fpccse@gat2026', role: 'fpc', department: 'CSE', designation: 'Faculty Placement Coordinator (FPC)' },
-  { id: 'u7', name: 'Aditya Deshmukh', email: 'spc.aditya@gat.ac.in', specialId: 'SPC-1GA21CS005', password: 'spc@gat2026', role: 'spc', usn: '1GA21CS005', department: 'CSE', designation: 'Student Placement Coordinator (SPC)' },
-
+  { id: 'u7', name: 'Nikhil Kulkarni', email: 'spc.nikhil@gat.ac.in', specialId: 'SPC-1GA21CS005', password: 'spc@gat2026', role: 'spc', usn: '1GA21CS005', department: 'CSE', designation: 'Student Placement Coordinator (SPC)' },
   // Set 4: HR External
   { id: 'u9', name: 'Pooja Hegde', email: 'pooja.h@amazon.com', specialId: 'HR-AMAZON-01', password: 'amazon@hr2026', role: 'hr', company: 'Amazon AWS Cloud', designation: 'University Talent Acquisition Lead' },
 
@@ -84,6 +79,10 @@ export const INITIAL_COMPANIES: Company[] = [
   { id: 'c6', name: 'Bosch Global Software', industry: 'Mobility & Embedded IoT', website: 'https://bosch.in', contactPerson: 'Kishore Kumar', contactEmail: 'campus@bosch.com', contactPhone: '+91 80 6755 1000', tier: 'Tier 2', visitedYear: 2026, jobProfiles: ['Autonomous Systems Engineer', 'Software Developer'] },
   { id: 'c7', name: 'Cisco Systems', industry: 'Networking & Cyber Security', website: 'https://cisco.com', contactPerson: 'Deepa Menon', contactEmail: 'cisco_grad@cisco.com', contactPhone: '+91 80 4426 0000', tier: 'Tier 1', visitedYear: 2026, jobProfiles: ['Network Security Engineer', 'Cloud Developer'] },
   { id: 'c8', name: 'Infosys Limited', industry: 'IT & Digital Transformation', website: 'https://infosys.com', contactPerson: 'Venkatesh Rao', contactEmail: 'freshers@infosys.com', contactPhone: '+91 80 2852 0261', tier: 'Tier 3', visitedYear: 2026, jobProfiles: ['Specialist Programmer (Digital)', 'Systems Engineer'] },
+    { id: 'c9', name: 'Oracle Cloud Infrastructure', industry: 'Cloud Computing', website: 'https://www.oracle.com', contactPerson: 'Demo Contact', contactEmail: 'recruitment@example.com', contactPhone: 'Not provided', tier: 'Tier 1', visitedYear: 2026, jobProfiles: ['Cloud Engineer', 'Software Engineer'] },
+  { id: 'c10', name: 'Mercedes-Benz R&D India', industry: 'Automotive & Mobility Technology', website: 'https://www.mercedes-benz.com', contactPerson: 'Demo Contact', contactEmail: 'recruitment@example.com', contactPhone: 'Not provided', tier: 'Tier 1', visitedYear: 2026, jobProfiles: ['Software Engineer', 'Embedded Systems Engineer'] },
+  { id: 'c11', name: 'Larsen & Toubro (L&T)', industry: 'Engineering & Technology', website: 'https://www.larsentoubro.com', contactPerson: 'Demo Contact', contactEmail: 'recruitment@example.com', contactPhone: 'Not provided', tier: 'Tier 2', visitedYear: 2026, jobProfiles: ['Graduate Engineer Trainee', 'Software Engineer'] },
+  { id: 'c12', name: 'Biocon Biologics', industry: 'Biotechnology & Pharmaceuticals', website: 'https://www.bioconbiologics.com', contactPerson: 'Demo Contact', contactEmail: 'recruitment@example.com', contactPhone: 'Not provided', tier: 'Tier 2', visitedYear: 2026, jobProfiles: ['Data Analyst', 'Bioinformatics Associate'] },
 ];
 
 export const INITIAL_DRIVES: PlacementDrive[] = [
@@ -135,7 +134,7 @@ export const INITIAL_DRIVES: PlacementDrive[] = [
     companyName: 'Texas Instruments',
     roleTitle: 'Embedded Systems & Firmware Engineer',
     ctcLPA: 22.0,
-    targetBranches: ['ECE', 'EEE', 'CSE', 'RA'],
+    targetBranches: ['ECE', 'EEE', 'CSE'],
     minCGPA: 7.5,
     maxBacklogsAllowed: 0,
     driveDate: '2026-10-18',
@@ -158,7 +157,6 @@ export const INITIAL_DRIVES: PlacementDrive[] = [
       { usn: '1GA21EC088', name: 'Deepika S. Nair', department: 'ECE', cgpa: 8.62, registeredAt: '2026-09-29 02:30 PM', status: 'Shortlisted' },
       { usn: '1GA21EE008', name: 'Praveen Gowda', department: 'EEE', cgpa: 8.21, registeredAt: '2026-09-29 03:00 PM', status: 'Shortlisted' },
       { usn: '1GA21CS042', name: 'Rohan Sharma', department: 'CSE', cgpa: 9.38, registeredAt: '2026-09-29 03:20 PM', status: 'Registered' },
-      { usn: '1GA21RA012', name: 'Nikhil Shenoy', department: 'RA', cgpa: 8.05, registeredAt: '2026-09-29 04:10 PM', status: 'Registered' }
     ],
     rounds: [
       { roundNumber: 1, roundName: 'Hardware Architecture & C Coding Test', date: '2026-10-18 10:00 AM', venue: 'ECE CAD Lab', qualifiedStudents: ['1GA21EC019', '1GA21EC088', '1GA21EE008'] }
@@ -171,7 +169,7 @@ export const INITIAL_DRIVES: PlacementDrive[] = [
     companyName: 'Bosch Global Software',
     roleTitle: 'Autonomous Mobility Software Engineer',
     ctcLPA: 12.5,
-    targetBranches: ['CSE', 'ISE', 'AIML', 'ECE', 'ME', 'RA'],
+    targetBranches: ['CSE', 'ISE', 'AIML', 'ECE', 'ME'],
     minCGPA: 7.0,
     maxBacklogsAllowed: 1,
     driveDate: '2026-10-24',
@@ -192,7 +190,6 @@ export const INITIAL_DRIVES: PlacementDrive[] = [
     enrolledStudentsList: [
       { usn: '1GA21ME034', name: 'Darshan Patel', department: 'ME', cgpa: 7.65, registeredAt: '2026-09-30 09:10 AM', status: 'Registered' },
       { usn: '1GA21EC019', name: 'Karthik Bharadwaj', department: 'ECE', cgpa: 8.94, registeredAt: '2026-09-30 09:40 AM', status: 'Registered' },
-      { usn: '1GA21RA012', name: 'Nikhil Shenoy', department: 'RA', cgpa: 8.05, registeredAt: '2026-09-30 10:15 AM', status: 'Registered' },
       { usn: '1GA21CS099', name: 'Varun Kashyap', department: 'CSE', cgpa: 8.42, registeredAt: '2026-09-30 11:20 AM', status: 'Registered' }
     ],
     rounds: []
@@ -204,7 +201,7 @@ export const INITIAL_DRIVES: PlacementDrive[] = [
     companyName: 'PhonePe',
     roleTitle: 'Backend Engineer (Fintech & Distributed Cache)',
     ctcLPA: 26.0,
-    targetBranches: ['CSE', 'ISE', 'AIML', 'AIDS', 'CS-CY'],
+    targetBranches: ['CSE', 'ISE', 'AIML', 'AIDS'],
     minCGPA: 8.0,
     maxBacklogsAllowed: 0,
     driveDate: '2026-09-20',
@@ -234,7 +231,7 @@ export const INITIAL_DRIVES: PlacementDrive[] = [
   {
     id: 'd5',
     driveCode: 'DRV-2026-MSFT-05',
-    companyId: 'c1',
+    companyId: 'c3',
     companyName: 'Microsoft IDC',
     roleTitle: 'Software Engineer - Azure & Systems',
     ctcLPA: 44.0,
@@ -272,7 +269,7 @@ export const INITIAL_DRIVES: PlacementDrive[] = [
   {
     id: 'd6',
     driveCode: 'DRV-2026-ORCL-06',
-    companyId: 'c7',
+    companyId: 'c9',
     companyName: 'Oracle Cloud Infrastructure (OCI)',
     roleTitle: 'Cloud Infrastructure & Database Core Developer',
     ctcLPA: 21.5,
@@ -308,11 +305,11 @@ export const INITIAL_DRIVES: PlacementDrive[] = [
   {
     id: 'd7',
     driveCode: 'DRV-2026-MBRDI-07',
-    companyId: 'c6',
+    companyId: 'c10',
     companyName: 'Mercedes-Benz R&D India (MBRDI)',
     roleTitle: 'Autonomous Driving & Embedded Infotainment Specialist',
     ctcLPA: 14.5,
-    targetBranches: ['CSE', 'AIML', 'ECE', 'EEE', 'ME', 'RA'],
+    targetBranches: ['CSE', 'AIML', 'ECE', 'EEE', 'ME'],
     minCGPA: 7.0,
     maxBacklogsAllowed: 1,
     driveDate: '2026-11-12',
@@ -333,7 +330,6 @@ export const INITIAL_DRIVES: PlacementDrive[] = [
     enrolledStudentsList: [
       { usn: '1GA21EC019', name: 'Karthik Bharadwaj', department: 'ECE', cgpa: 8.94, registeredAt: '2026-09-30 01:10 PM', status: 'Registered' },
       { usn: '1GA21ME034', name: 'Darshan Patel', department: 'ME', cgpa: 7.65, registeredAt: '2026-09-30 01:45 PM', status: 'Registered' },
-      { usn: '1GA21RA012', name: 'Nikhil Shenoy', department: 'RA', cgpa: 8.05, registeredAt: '2026-09-30 02:10 PM', status: 'Registered' }
     ],
     rounds: [
       { roundNumber: 1, roundName: 'Domain Specific Technical MCQ & C++ Coding', date: '2026-11-12 10:30 AM', venue: 'CAD/CAM Lab', qualifiedStudents: [] },
@@ -343,7 +339,7 @@ export const INITIAL_DRIVES: PlacementDrive[] = [
   {
     id: 'd8',
     driveCode: 'DRV-2026-LT-08',
-    companyId: 'c8',
+    companyId: 'c11',
     companyName: 'Larsen & Toubro (L&T)',
     roleTitle: 'Graduate Engineer Trainee - Infrastructure & Structural Engineering',
     ctcLPA: 7.2,
@@ -373,11 +369,11 @@ export const INITIAL_DRIVES: PlacementDrive[] = [
   {
     id: 'd9',
     driveCode: 'DRV-2026-BIOCON-09',
-    companyId: 'c8',
+    companyId: 'c12',
     companyName: 'Biocon Biologics',
     roleTitle: 'Bioinformatics & Biosimilar Process Research Associate',
     ctcLPA: 8.5,
-    targetBranches: ['BT'],
+    targetBranches: ['AIML','AIDS'],
     minCGPA: 7.0,
     maxBacklogsAllowed: 0,
     driveDate: '2026-11-22',
@@ -422,7 +418,6 @@ export const HISTORICAL_BATCH_METRICS = [
       { department: 'EEE', strength: 60, placed: 44, percentage: 73.3, avgCtc: 5.6, highestCtc: 12.0 },
       { department: 'ME', strength: 60, placed: 41, percentage: 68.3, avgCtc: 5.2, highestCtc: 9.5 },
       { department: 'CV', strength: 60, placed: 38, percentage: 63.3, avgCtc: 4.8, highestCtc: 8.0 },
-      { department: 'BT', strength: 45, placed: 36, percentage: 80.0, avgCtc: 5.8, highestCtc: 11.5 }
     ]
   },
   {
@@ -443,7 +438,6 @@ export const HISTORICAL_BATCH_METRICS = [
       { department: 'EEE', strength: 60, placed: 47, percentage: 78.3, avgCtc: 6.0, highestCtc: 14.0 },
       { department: 'ME', strength: 60, placed: 44, percentage: 73.3, avgCtc: 5.6, highestCtc: 11.0 },
       { department: 'CV', strength: 60, placed: 41, percentage: 68.3, avgCtc: 5.1, highestCtc: 9.0 },
-      { department: 'BT', strength: 45, placed: 38, percentage: 84.4, avgCtc: 6.4, highestCtc: 13.0 }
     ]
   },
   {
@@ -461,13 +455,10 @@ export const HISTORICAL_BATCH_METRICS = [
       { department: 'AIML', strength: 120, placed: 116, percentage: 96.6, avgCtc: 10.8, highestCtc: 34.0 },
       { department: 'AIDS', strength: 60, placed: 56, percentage: 93.3, avgCtc: 9.9, highestCtc: 28.0 },
       { department: 'ECE', strength: 180, placed: 164, percentage: 91.1, avgCtc: 8.6, highestCtc: 24.0 },
-      { department: 'CS-CY', strength: 60, placed: 55, percentage: 91.6, avgCtc: 9.2, highestCtc: 22.0 },
       { department: 'CS-IOT', strength: 60, placed: 53, percentage: 88.3, avgCtc: 8.4, highestCtc: 20.0 },
       { department: 'EEE', strength: 60, placed: 49, percentage: 81.6, avgCtc: 6.6, highestCtc: 16.0 },
       { department: 'ME', strength: 60, placed: 46, percentage: 76.6, avgCtc: 6.1, highestCtc: 12.5 },
       { department: 'CV', strength: 60, placed: 44, percentage: 73.3, avgCtc: 5.5, highestCtc: 10.0 },
-      { department: 'BT', strength: 45, placed: 40, percentage: 88.8, avgCtc: 7.2, highestCtc: 14.5 },
-      { department: 'RA', strength: 45, placed: 39, percentage: 86.6, avgCtc: 7.5, highestCtc: 15.0 },
       { department: 'AE', strength: 45, placed: 36, percentage: 80.0, avgCtc: 6.8, highestCtc: 13.0 },
       { department: 'MCA', strength: 60, placed: 52, percentage: 86.6, avgCtc: 7.4, highestCtc: 14.0 },
       { department: 'MBA', strength: 60, placed: 53, percentage: 88.3, avgCtc: 7.1, highestCtc: 13.5 }

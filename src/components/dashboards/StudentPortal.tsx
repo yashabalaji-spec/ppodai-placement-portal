@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState,useEffect } from 'react';
 import { StudentProfile, StudentSkill, StudentInternship, StudentProject, StudentRnD, PlacementDrive } from '../../types';
 import { generateStudentResumePDF } from '../../services/pdfService';
 import { StudentDriveSchedule } from './StudentDriveSchedule';
@@ -46,6 +46,10 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
   onUpdateProfile
 }) => {
   const [profile, setProfile] = useState<StudentProfile>(student);
+  // Keep the dashboard profile synchronized with updated App data
+   useEffect(() => {
+     setProfile(student);
+   }, [student]);
   const [activeTab, setActiveTab] = useState<'schedule' | 'emails' | 'personal' | 'academic' | 'skills' | 'rnd' | 'resumes' | 'offers'>('schedule');
   const [saveSuccess, setSaveSuccess] = useState(false);
 
@@ -84,11 +88,13 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
   // Lock status calculation: locked if isLocked is true AND not currently approved
   const isProfileLocked = profile.isLocked !== false && profile.editPermissionStatus !== 'approved';
 
-  const handleSave = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (isProfileLocked) return;
+  
+const handleSave = async (e: React.FormEvent) => {
+  e.preventDefault();
 
-    // Upon saving, the profile is officially locked!
+  if (isProfileLocked) return;
+
+  try {
     const updated: StudentProfile = {
       ...profile,
       isLocked: true,
@@ -96,11 +102,34 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
       editPermissionStatus: 'none',
       editPermissionReason: undefined
     };
+
+    const response = await fetch('/api/student/profile', {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      credentials: 'same-origin',
+      body: JSON.stringify(updated)
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      window.alert(data.message || 'Unable to save profile.');
+      return;
+    }
+
     setProfile(updated);
     onUpdateProfile(updated);
     setSaveSuccess(true);
+
     setTimeout(() => setSaveSuccess(false), 3000);
-  };
+
+  } catch (error) {
+    console.error('Profile save failed:', error);
+    window.alert('Unable to connect to the server. Please try again.');
+  }
+};
 
   const handleSendHODRequest = (e: React.FormEvent) => {
     e.preventDefault();
@@ -148,7 +177,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
   const urgentEmail = studentEmails.find(e => e.hoursLeft > 0 && e.hoursLeft <= 24 && !e.formSubmitted);
 
   // Smooth scroll tab transition helper
-  const handleTabChange = (tab: StudentTab, targetElId?: string) => {
+  const handleTabChange = (tab: typeof activeTab, targetElId?: string) => {
     setActiveTab(tab);
     setTimeout(() => {
       const el = targetElId ? document.getElementById(targetElId) : document.getElementById('student-tab-content');

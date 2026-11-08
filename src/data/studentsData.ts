@@ -1,23 +1,26 @@
+
 import { StudentProfile, OfferDetails } from '../types';
 
-// 15 Branches at Global Academy of Technology
+// Current 11 branches at Global Academy of Technology
 export const ALL_BRANCH_CODES = [
-  'CSE', 'ISE', 'AIML', 'AIDS', 'ECE', 
-  'EEE', 'ME', 'CV', 'BT', 'CS-CY', 
-  'CS-IOT', 'AE', 'MCA', 'MBA', 'RA'
+  'CSE', 'ISE', 'AIML', 'AIDS', 'ECE', 'EEE',
+  'ME', 'CV', 'CSE(AIML)', 'AE', 'MBA'
 ] as const;
 
 export type BranchCode = typeof ALL_BRANCH_CODES[number];
 
-// Realistic names pool for diverse students across Karnataka & India
-const STUDENT_NAMES_BY_BRANCH: Record<BranchCode, { first: string; last: string; gender: 'Male' | 'Female' }[]> = {
+// Each branch has six mock student profiles
+const STUDENT_NAMES_BY_BRANCH: Record<
+  BranchCode,
+  { first: string; last: string; gender: 'Male' | 'Female' }[]
+> = {
   CSE: [
     { first: 'Rohan', last: 'Sharma', gender: 'Male' },
     { first: 'Ananya', last: 'Hegde', gender: 'Female' },
     { first: 'Kiran', last: 'Deshmukh', gender: 'Male' },
     { first: 'Sanjana', last: 'Rao', gender: 'Female' },
     { first: 'Nikhil', last: 'Kulkarni', gender: 'Male' },
-    { first: 'Pooja', last: 'Srinivasan', gender: 'Female' },
+    { first: 'Pooja', last: 'Srinivasan', gender: 'Female' }
   ],
   ISE: [
     { first: 'Varun', last: 'Kashyap', gender: 'Male' },
@@ -25,7 +28,7 @@ const STUDENT_NAMES_BY_BRANCH: Record<BranchCode, { first: string; last: string;
     { first: 'Aditya', last: 'Prasad', gender: 'Male' },
     { first: 'Sneha', last: 'Narayanan', gender: 'Female' },
     { first: 'Gautam', last: 'Shetty', gender: 'Male' },
-    { first: 'Priyanka', last: 'Gowda', gender: 'Female' },
+    { first: 'Priyanka', last: 'Gowda', gender: 'Female' }
   ],
   AIML: [
     { first: 'Tanvi', last: 'Maheshwari', gender: 'Female' },
@@ -33,7 +36,7 @@ const STUDENT_NAMES_BY_BRANCH: Record<BranchCode, { first: string; last: string;
     { first: 'Divya', last: 'Chandrashekar', gender: 'Female' },
     { first: 'Rishabh', last: 'Jain', gender: 'Male' },
     { first: 'Ishita', last: 'Reddy', gender: 'Female' },
-    { first: 'Siddharth', last: 'Menon', gender: 'Male' },
+    { first: 'Siddharth', last: 'Menon', gender: 'Male' }
   ],
   AIDS: [
     { first: 'Shashank', last: 'Kumar', gender: 'Male' },
@@ -41,7 +44,7 @@ const STUDENT_NAMES_BY_BRANCH: Record<BranchCode, { first: string; last: string;
     { first: 'Manish', last: 'Pandey', gender: 'Male' },
     { first: 'Keerthana', last: 'M', gender: 'Female' },
     { first: 'Tejas', last: 'Shenoy', gender: 'Male' },
-    { first: 'Lavanya', last: 'Venkatesh', gender: 'Female' },
+    { first: 'Lavanya', last: 'Venkatesh', gender: 'Female' }
   ],
   ECE: [
     { first: 'Deepika', last: 'Nair', gender: 'Female' },
@@ -49,7 +52,7 @@ const STUDENT_NAMES_BY_BRANCH: Record<BranchCode, { first: string; last: string;
     { first: 'Swathi', last: 'Murthy', gender: 'Female' },
     { first: 'Arun', last: 'Pai', gender: 'Male' },
     { first: 'Harshitha', last: 'Gowda', gender: 'Female' },
-    { first: 'Vikas', last: 'R', gender: 'Male' },
+    { first: 'Vikas', last: 'R', gender: 'Male' }
   ],
   EEE: [
     { first: 'Praveen', last: 'Gowda', gender: 'Male' },
@@ -57,7 +60,7 @@ const STUDENT_NAMES_BY_BRANCH: Record<BranchCode, { first: string; last: string;
     { first: 'Chetan', last: 'Kumar', gender: 'Male' },
     { first: 'Rakshitha', last: 'S', gender: 'Female' },
     { first: 'Abhishek', last: 'Patil', gender: 'Male' },
-    { first: 'Sahana', last: 'B', gender: 'Female' },
+    { first: 'Sahana', last: 'B', gender: 'Female' }
   ],
   ME: [
     { first: 'Darshan', last: 'Patel', gender: 'Male' },
@@ -65,7 +68,7 @@ const STUDENT_NAMES_BY_BRANCH: Record<BranchCode, { first: string; last: string;
     { first: 'Archana', last: 'Reddy', gender: 'Female' },
     { first: 'Pradeep', last: 'Naik', gender: 'Male' },
     { first: 'Sumanth', last: 'Babu', gender: 'Male' },
-    { first: 'Kavya', last: 'Shankar', gender: 'Female' },
+    { first: 'Kavya', last: 'Shankar', gender: 'Female' }
   ],
   CV: [
     { first: 'Sanjay', last: 'Gowda', gender: 'Male' },
@@ -73,31 +76,15 @@ const STUDENT_NAMES_BY_BRANCH: Record<BranchCode, { first: string; last: string;
     { first: 'Manjunath', last: 'Rao', gender: 'Male' },
     { first: 'Chaitra', last: 'H', gender: 'Female' },
     { first: 'Santhosh', last: 'Kumar', gender: 'Male' },
-    { first: 'Spoorthi', last: 'P', gender: 'Female' },
+    { first: 'Spoorthi', last: 'P', gender: 'Female' }
   ],
-  BT: [
-    { first: 'Nanditha', last: 'Bhatt', gender: 'Female' },
-    { first: 'Rahul', last: 'Nambiar', gender: 'Male' },
-    { first: 'Shreya', last: 'Kashyap', gender: 'Female' },
-    { first: 'Pranav', last: 'S', gender: 'Male' },
-    { first: 'Namratha', last: 'Hebbar', gender: 'Female' },
-    { first: 'Sharath', last: 'C', gender: 'Male' },
-  ],
-  'CS-CY': [
-    { first: 'Akash', last: 'Srivastava', gender: 'Male' },
+  'CSE(AIML)': [
+    { first: 'Akash', last: 'Reddy', gender: 'Male' },
     { first: 'Meera', last: 'Nair', gender: 'Female' },
-    { first: 'Tarun', last: 'B', gender: 'Male' },
+    { first: 'Tarun', last: 'Kumar', gender: 'Male' },
     { first: 'Disha', last: 'Kulkarni', gender: 'Female' },
     { first: 'Yash', last: 'Balaji', gender: 'Male' },
-    { first: 'Monika', last: 'S', gender: 'Female' },
-  ],
-  'CS-IOT': [
-    { first: 'Chirag', last: 'Shah', gender: 'Male' },
-    { first: 'Hamsa', last: 'V', gender: 'Female' },
-    { first: 'Naveen', last: 'Kumar', gender: 'Male' },
-    { first: 'Pavithra', last: 'R', gender: 'Female' },
-    { first: 'Pruthvi', last: 'G', gender: 'Male' },
-    { first: 'Sushmitha', last: 'N', gender: 'Female' },
+    { first: 'Monika', last: 'Shetty', gender: 'Female' }
   ],
   AE: [
     { first: 'Raghavendra', last: 'P', gender: 'Male' },
@@ -105,15 +92,7 @@ const STUDENT_NAMES_BY_BRANCH: Record<BranchCode, { first: string; last: string;
     { first: 'Manoj', last: 'B', gender: 'Male' },
     { first: 'Rashmi', last: 'G', gender: 'Female' },
     { first: 'Suraj', last: 'Patil', gender: 'Male' },
-    { first: 'Vidya', last: 'K', gender: 'Female' },
-  ],
-  MCA: [
-    { first: 'Vinay', last: 'Prasad', gender: 'Male' },
-    { first: 'Ranjitha', last: 'M', gender: 'Female' },
-    { first: 'Dhanush', last: 'Gowda', gender: 'Male' },
-    { first: 'Tejaswini', last: 'K', gender: 'Female' },
-    { first: 'Sharath', last: 'Kumar', gender: 'Male' },
-    { first: 'Anitha', last: 'S', gender: 'Female' },
+    { first: 'Vidya', last: 'K', gender: 'Female' }
   ],
   MBA: [
     { first: 'Kunal', last: 'Singhal', gender: 'Male' },
@@ -121,117 +100,99 @@ const STUDENT_NAMES_BY_BRANCH: Record<BranchCode, { first: string; last: string;
     { first: 'Gaurav', last: 'Joshi', gender: 'Male' },
     { first: 'Pallavi', last: 'Reddy', gender: 'Female' },
     { first: 'Rohit', last: 'Nayak', gender: 'Male' },
-    { first: 'Sindhu', last: 'B', gender: 'Female' },
-  ],
-  RA: [
-    { first: 'Nikhil', last: 'Shenoy', gender: 'Male' },
-    { first: 'Harshini', last: 'R', gender: 'Female' },
-    { first: 'Kiran', last: 'Kumar', gender: 'Male' },
-    { first: 'Spandana', last: 'S', gender: 'Female' },
-    { first: 'Shreyas', last: 'M', gender: 'Male' },
-    { first: 'Apoorva', last: 'G', gender: 'Female' },
+    { first: 'Sindhu', last: 'B', gender: 'Female' }
   ]
 };
 
-// Semester distribution per student index (0 to 5)
-// Index 0: Semester 1 (1st Year)
-// Index 1: Semester 3 (2nd Year)
-// Index 2: Semester 5 (3rd Year - Pending Placement Mail Setup! User requirement tester)
-// Index 3: Semester 5 (3rd Year - Activated Placement Mail)
-// Index 4: Semester 7 (4th Year / Final Year - Active Placement Seeker)
-// Index 5: Semester 8 (4th Year / Final Year - Placed with confirmed marquee offers)
+// Official USN branch abbreviations
+const USN_BRANCH_CODES: Record<BranchCode, string> = {
+  CSE: 'CS',
+  ISE: 'IS',
+  AIML: 'AI',
+  AIDS: 'AD',
+  ECE: 'EC',
+  EEE: 'EE',
+  ME: 'ME',
+  CV: 'CV',
+  'CSE(AIML)': 'CI',
+  AE: 'AE',
+  MBA: 'MB'
+};
+
 export function generateAllBranchStudents(): StudentProfile[] {
   const students: StudentProfile[] = [];
 
   ALL_BRANCH_CODES.forEach((branchCode) => {
     const names = STUDENT_NAMES_BY_BRANCH[branchCode];
-    const deptPrefix = branchCode.replace('-', '').substring(0, 2).toUpperCase();
+    const usnPrefix = USN_BRANCH_CODES[branchCode];
 
     names.forEach((person, idx) => {
-      // Semester assignment
       let semester = 1;
       let batchYear = 2028;
       let yearOfJoining = 2024;
       let admissionYearTwoDigits = '24';
 
-      if (idx === 0) {
-        semester = 1;
-        batchYear = 2028;
-        yearOfJoining = 2024;
-        admissionYearTwoDigits = '24';
-      } else if (idx === 1) {
+      if (idx === 1) {
         semester = 3;
         batchYear = 2027;
         yearOfJoining = 2023;
         admissionYearTwoDigits = '23';
-      } else if (idx === 2) {
-        semester = 5; // 5th Sem - PENDING placement mail creation (Key User requirement!)
+      } else if (idx === 2 || idx === 3) {
+        semester = 5;
         batchYear = 2026;
         yearOfJoining = 2022;
         admissionYearTwoDigits = '22';
-      } else if (idx === 3) {
-        semester = 5; // 5th Sem - ACTIVATED placement mail
-        batchYear = 2026;
-        yearOfJoining = 2022;
-        admissionYearTwoDigits = '22';
-      } else if (idx === 4) {
-        semester = 7; // Final year
-        batchYear = 2025;
-        yearOfJoining = 2021;
-        admissionYearTwoDigits = '21';
-      } else {
-        semester = 8; // Final year placed
+      } else if (idx === 4 || idx === 5) {
+        semester = idx === 4 ? 7 : 8;
         batchYear = 2025;
         yearOfJoining = 2021;
         admissionYearTwoDigits = '21';
       }
 
-      // For MCA & MBA (2-year programs max 4 sems)
-      if (branchCode === 'MCA' || branchCode === 'MBA') {
-        if (idx === 0) semester = 1;
-        else if (idx === 1) semester = 2;
-        else if (idx === 2) semester = 3; // 3rd sem is entering placement phase for PG
-        else if (idx === 3) semester = 3;
-        else if (idx === 4) semester = 4;
-        else semester = 4;
-      }
-
+      // MBA is a 2-year programme (maximum 4 semesters)
+if (branchCode === 'MBA') {
+  if (idx === 0) semester = 1;
+  else if (idx === 1) semester = 2;
+  else if (idx === 2 || idx === 3) semester = 3;
+  else semester = 4;
+}
       const rollNumber = String(idx + 1).padStart(3, '0');
-      // Special-case Rohan Sharma's well-known USN for backward compatibility
-      const usn = (branchCode === 'CSE' && idx === 0) 
-        ? '1GA21CS042' 
-        : `1GA${admissionYearTwoDigits}${deptPrefix}${rollNumber}`;
 
-      const fullName = (branchCode === 'CSE' && idx === 0) 
-        ? 'Rohan Sharma' 
+      // Preserve the existing CSE demo login
+      const usn = branchCode === 'CSE' && idx === 0
+        ? '1GA21CS042'
+        : `1GA${admissionYearTwoDigits}${usnPrefix}${rollNumber}`;
+
+      const fullName = branchCode === 'CSE' && idx === 0
+        ? 'Rohan Sharma'
         : `${person.first} ${person.last}`;
 
       const cleanFirst = person.first.toLowerCase();
       const cleanLast = person.last.toLowerCase();
+
       const collegeEmail = `${usn.toLowerCase()}@gat.ac.in`;
       const personalEmailId = `${cleanFirst}.${cleanLast}@gmail.com`;
 
-      // 5th Sem placement mail logic
-      // idx === 2: in 5th sem, NOT yet activated (user must create it upon entering 5th sem!)
-      // idx === 3, 4, 5: semester >= 5 and activated
-      const isPlacementMailActivated = (idx !== 2 && semester >= 5);
-      const placementEmailId = isPlacementMailActivated 
-        ? `${cleanFirst}.${cleanLast}.${branchCode.toLowerCase()}@gat.ac.in` 
+      const isPlacementMailActivated = idx >= 3;
+      const placementEmailId = isPlacementMailActivated
+        ? `${cleanFirst}.${cleanLast}.${usnPrefix.toLowerCase()}@gat.ac.in`
         : '';
 
-      // Degree description
-      const degreeTitle = branchCode === 'MCA' ? 'MCA (Master of Computer Applications)' :
-                          branchCode === 'MBA' ? 'MBA (Master of Business Administration)' :
-                          `B.E (${branchCode} Engineering)`;
+      const degreeTitle = branchCode === 'MBA'
+        ? 'MBA (Master of Business Administration)'
+        : `B.E (${branchCode} Engineering)`;
 
-      // CGPA & Offers
-      const cgpa = Number((7.4 + (idx * 0.42) + ((idx % 3) * 0.15)).toFixed(2));
-      const section: 'A' | 'B' | 'C' = idx % 3 === 0 ? 'A' : idx % 3 === 1 ? 'B' : 'C';
+      const cgpa = Number(
+        (7.4 + idx * 0.42 + (idx % 3) * 0.15).toFixed(2)
+      );
 
-      // Confirmed offers for placed students (idx === 5, and some for idx === 4)
+      const section: 'A' | 'B' | 'C' =
+        idx % 3 === 0 ? 'A' : idx % 3 === 1 ? 'B' : 'C';
+
       const offers: OfferDetails[] = [];
+
       if (idx === 5) {
-        if (['CSE', 'ISE', 'AIML', 'AIDS', 'CS-CY', 'CS-IOT'].includes(branchCode)) {
+        if (['CSE', 'ISE', 'AIML', 'AIDS', 'CSE(AIML)'].includes(branchCode)) {
           offers.push({
             id: `off_${usn}_1`,
             companyId: 'c2',
@@ -242,7 +203,7 @@ export function generateAllBranchStudents(): StudentProfile[] {
             tier: 'Tier 1 Super Dream (>15 LPA)',
             status: 'accepted'
           });
-        } else if (['ECE', 'EEE', 'RA'].includes(branchCode)) {
+        } else if (['ECE', 'EEE', 'AE'].includes(branchCode)) {
           offers.push({
             id: `off_${usn}_1`,
             companyId: 'c4',
@@ -289,16 +250,16 @@ export function generateAllBranchStudents(): StudentProfile[] {
         semester,
         batchYear,
         password: 'student@2026',
-        mobileNo: `9845${String(100000 + idx * 7234 + branchCode.charCodeAt(0) * 11).substring(0, 6)}`,
+        mobileNo: `9845${String(100000 + idx * 7234 + usnPrefix.charCodeAt(0) * 11).substring(0, 6)}`,
         gender: person.gender,
         dateOfBirth: `200${4 - Math.floor(semester / 2)}-0${(idx % 9) + 1}-1${idx + 2}`,
         yearOfJoining,
-        typeOfEntry: idx % 4 === 3 ? 'Lateral Entry' : 'Regular',
+        typeOfEntry: idx === 3 ? 'Lateral Entry' : 'Regular',
         collegeEmail,
         personalEmailId,
         placementEmailId,
         isPlacementMailActivated,
-        panNumber: `ABC${branchCode.substring(0,2)}${1000 + idx}F`,
+        panNumber: `ABC${usnPrefix}${1000 + idx}F`,
         aadharNumber: `4532 9871 ${1000 + idx * 10}`,
         bloodGroup: idx % 2 === 0 ? 'O+ve' : 'B+ve',
         physicallyChallenged: 'No',
@@ -337,26 +298,22 @@ export function generateAllBranchStudents(): StudentProfile[] {
           { name: 'Relational Databases (SQL)', category: 'database', rating: 4 },
           { name: 'Cloud & DevOps Fundamentals', category: 'cloud', rating: 3 }
         ],
-        internships: semester >= 5 ? [
-          {
-            id: `int_${usn}_1`,
-            companyName: 'Infosys Springboard',
-            domain: 'Cloud Architecture & Web Services',
-            durationMonths: 3,
-            startDate: '2024-06-01',
-            endDate: '2024-08-31',
-            description: 'Implemented microservices and RESTful API endpoints.'
-          }
-        ] : [],
-        projects: [
-          {
-            id: `proj_${usn}_1`,
-            title: `Smart ${branchCode} Operational System`,
-            domain: 'Engineering & Automation',
-            techStack: ['Python', 'PostgreSQL', 'React', 'TailwindCSS'],
-            description: `Automated data processing and analysis tool developed at GAT.`
-          }
-        ],
+        internships: semester >= 5 ? [{
+          id: `int_${usn}_1`,
+          companyName: 'Infosys Springboard',
+          domain: 'Cloud Architecture & Web Services',
+          durationMonths: 3,
+          startDate: '2024-06-01',
+          endDate: '2024-08-31',
+          description: 'Implemented microservices and RESTful API endpoints.'
+        }] : [],
+        projects: [{
+          id: `proj_${usn}_1`,
+          title: `Smart ${branchCode} Operational System`,
+          domain: 'Engineering & Automation',
+          techStack: ['Python', 'PostgreSQL', 'React', 'TailwindCSS'],
+          description: 'Automated data processing and analysis tool developed at GAT.'
+        }],
         rndWorks: [],
         achievementsAcademic: [
           `Dean's Merit List Student (Semester ${semester})`,
@@ -365,7 +322,12 @@ export function generateAllBranchStudents(): StudentProfile[] {
         achievementsNonAcademic: [
           'Member of GAT Technical & Cultural Society'
         ],
-        hobbiesAndInterests: ['Competitive Coding', 'Open Source Systems', 'Robotics & AI Club', 'Badminton'],
+        hobbiesAndInterests: [
+          'Competitive Coding',
+          'Open Source Systems',
+          'Robotics & AI Club',
+          'Badminton'
+        ],
         offers,
         isPlaced: offers.length > 0
       });

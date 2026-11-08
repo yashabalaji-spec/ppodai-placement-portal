@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { UserAccount, RoleType } from '../../types';
-import { INITIAL_USERS, BRANCHES } from '../../data/mockData';
+import { BRANCHES } from '../../data/mockData';
 import { ROLE_LABELS } from '../Navbar';
 import { GatLogo } from '../common/GatLogo';
 import { PortalIcon, PortalMode } from '../common/PortalIcon';
@@ -39,162 +39,81 @@ export const LoginPage: React.FC<LoginPageProps> = ({
 
   const [selectedRole, setSelectedRole] = useState<RoleType>('student');
   const [selectedBranch, setSelectedBranch] = useState<string>('CSE');
-  const [specialIdInput, setSpecialIdInput] = useState('1GA21CS042');
-  const [passwordInput, setPasswordInput] = useState('student@2026');
+  const [specialIdInput, setSpecialIdInput] = useState('');
+  const [passwordInput, setPasswordInput] = useState('');
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   // When user clicks one of the 4 big portal mode cards:
   const handlePortalModeSelect = (mode: PortalMode) => {
-    setActivePortalMode(mode);
-    setErrorMessage(null);
+  setActivePortalMode(mode);
+  setErrorMessage(null);
+  setSpecialIdInput('');
+  setPasswordInput('');
 
-    if (mode === 'student') {
-      setSelectedRole('student');
-      setSpecialIdInput('1GA21CS042');
-      setPasswordInput('student@2026');
-    } else if (mode === 'placement_cell') {
-      setSelectedRole(placementCellSubRole);
-      if (placementCellSubRole === 'pcc') {
-        setSpecialIdInput('PCC-OFFICER-01');
-        setPasswordInput('pcc@gat2026');
-      } else if (placementCellSubRole === 'fpc') {
-        setSpecialIdInput('FPC-CSE-01');
-        setPasswordInput('fpccse@gat2026');
-      } else if (placementCellSubRole === 'spc') {
-        setSpecialIdInput('SPC-1GA21CS005');
-        setPasswordInput('spc@gat2026');
-      } else if (placementCellSubRole === 'hod') {
-        setSpecialIdInput(`HOD-${selectedBranch}-01`);
-        setPasswordInput(`hod${selectedBranch.toLowerCase()}@gat2026`);
-      } else if (placementCellSubRole === 'placement_dean') {
-        setSpecialIdInput('GAT-DEAN-01');
-        setPasswordInput('dean@gat2026');
-      } else if (placementCellSubRole === 'principal') {
-        setSpecialIdInput('GAT-PRIN-01');
-        setPasswordInput('principal@gat2026');
-      } else {
-        setSpecialIdInput('GAT-MGMT-01');
-        setPasswordInput('mgmt@gat2026');
-      }
-    } else if (mode === 'hr_staff') {
-      setSelectedRole('hr');
-      setSpecialIdInput('HR-AMAZON-01');
-      setPasswordInput('amazon@hr2026');
-    } else if (mode === 'admin') {
-      setSelectedRole('admin');
-      setSpecialIdInput('ADMIN-GAT-ROOT');
-      setPasswordInput('admin@root2026');
-    }
+  if (mode === 'student') {
+    setSelectedRole('student');
+  } else if (mode === 'placement_cell') {
+    setSelectedRole(placementCellSubRole);
+  } else if (mode === 'hr_staff') {
+    setSelectedRole('hr');
+  } else if (mode === 'admin') {
+    setSelectedRole('admin');
+  }
 
-    // Smoothly scroll down to login form on click
-    setTimeout(() => {
-      const card = document.getElementById('login-card');
-      if (card) {
-        card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-      }
-    }, 100);
-  };
+  setTimeout(() => {
+    document.getElementById('login-card')?.scrollIntoView({
+      behavior: 'smooth',
+      block: 'nearest'
+    });
+  }, 100);
+};
 
   const handlePlacementSubRoleChange = (subRole: RoleType) => {
-    setPlacementCellSubRole(subRole);
-    setSelectedRole(subRole);
-    setErrorMessage(null);
+  setPlacementCellSubRole(subRole);
+  setSelectedRole(subRole);
+  setErrorMessage(null);
+  setSpecialIdInput('');
+  setPasswordInput('');
+};
 
-    if (subRole === 'pcc') {
-      setSpecialIdInput('PCC-OFFICER-01');
-      setPasswordInput('pcc@gat2026');
-    } else if (subRole === 'fpc') {
-      setSpecialIdInput('FPC-CSE-01');
-      setPasswordInput('fpccse@gat2026');
-    } else if (subRole === 'spc') {
-      setSpecialIdInput('SPC-1GA21CS005');
-      setPasswordInput('spc@gat2026');
-    } else if (subRole === 'hod') {
-      setSpecialIdInput(`HOD-${selectedBranch}-01`);
-      setPasswordInput(`hod${selectedBranch.toLowerCase()}@gat2026`);
-    } else if (subRole === 'placement_dean') {
-      setSpecialIdInput('GAT-DEAN-01');
-      setPasswordInput('dean@gat2026');
-    } else if (subRole === 'principal') {
-      setSpecialIdInput('GAT-PRIN-01');
-      setPasswordInput('principal@gat2026');
-    } else {
-      setSpecialIdInput('GAT-MGMT-01');
-      setPasswordInput('mgmt@gat2026');
-    }
-  };
+  const handleLoginSubmit = async (e: React.FormEvent) => {
+  e.preventDefault();
+  setErrorMessage(null);
+  setIsLoggingIn(true);
 
-  const handleLoginSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setErrorMessage(null);
+  try {
+    const response = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      credentials: 'same-origin',
+      body: JSON.stringify({
+        identifier: specialIdInput.trim(),
+        password: passwordInput,
+        role: selectedRole
+      })
+    });
 
-    const inputId = specialIdInput.trim().toUpperCase();
-    const inputPw = passwordInput.trim();
+    const data = await response.json();
 
-    // Find user by specialId, email, or usn
-    let matchedUser = INITIAL_USERS.find(u => 
-      u.role === selectedRole && (
-        u.specialId.toUpperCase() === inputId ||
-        u.email.toUpperCase() === inputId ||
-        (u.usn && u.usn.toUpperCase() === inputId)
-      )
-    );
-
-    // If HOD, allow any of the 15 branch codes as ID (e.g. HOD-ECE, HOD-AIML, etc.)
-    if (selectedRole === 'hod' && !matchedUser) {
-      const branchMatch = BRANCHES.find(b => 
-        inputId.includes(b.code) || b.code === selectedBranch
-      ) || BRANCHES[0];
-
-      matchedUser = {
-        id: `hod_${branchMatch.code}`,
-        name: `${branchMatch.hod} (HOD ${branchMatch.code})`,
-        email: `hod.${branchMatch.code.toLowerCase()}@gat.ac.in`,
-        specialId: `HOD-${branchMatch.code}-01`,
-        password: `hod${branchMatch.code.toLowerCase()}@gat2026`,
-        role: 'hod',
-        department: branchMatch.code,
-        branchName: branchMatch.name,
-        designation: `Professor & Head of Department - ${branchMatch.name}`
-      };
-    }
-
-    if (!matchedUser) {
-      setErrorMessage(`Invalid credentials for ${ROLE_LABELS[selectedRole].title}. Please verify your Special ID.`);
+    if (!response.ok) {
+      setErrorMessage(
+        data.message || 'Login failed. Please check your credentials.'
+      );
       return;
     }
 
-    // Verify password if provided
-    if (matchedUser.password && inputPw !== matchedUser.password) {
-      setErrorMessage(`Incorrect password for ${matchedUser.name}. Required password: ${matchedUser.password}`);
-      return;
-    }
-
-    onLoginSuccess(matchedUser);
-  };
-
-  // Quick 1-click test login
-  const handleQuickLogin = (role: RoleType, branchCode?: string) => {
-    let targetUser = INITIAL_USERS.find(u => u.role === role);
-    if (role === 'hod' && branchCode) {
-      const bObj = BRANCHES.find(b => b.code === branchCode) || BRANCHES[0];
-      targetUser = {
-        id: `hod_${bObj.code}`,
-        name: `${bObj.hod} (HOD ${bObj.code})`,
-        email: `hod.${bObj.code.toLowerCase()}@gat.ac.in`,
-        specialId: `HOD-${bObj.code}-01`,
-        password: `hod${bObj.code.toLowerCase()}@gat2026`,
-        role: 'hod',
-        department: bObj.code,
-        branchName: bObj.name,
-        designation: `Professor & Head of Department - ${bObj.name}`
-      };
-    }
-    if (targetUser) {
-      onLoginSuccess(targetUser);
-    }
-  };
+    onLoginSuccess(data.user);
+  } catch (error) {
+    console.error('Login request failed:', error);
+    setErrorMessage('Unable to connect to the server. Please try again.');
+  } finally {
+    setIsLoggingIn(false);
+  }
+};
 
   return (
     <div className="min-h-screen bg-[#F8FAF9] flex flex-col justify-between">
@@ -379,8 +298,9 @@ export const LoginPage: React.FC<LoginPageProps> = ({
                   value={selectedBranch}
                   onChange={(e) => {
                     setSelectedBranch(e.target.value);
-                    setSpecialIdInput(`HOD-${e.target.value}-01`);
-                    setPasswordInput(`hod${e.target.value.toLowerCase()}@gat2026`);
+                    setSpecialIdInput('');
+                    setPasswordInput('');
+                    setErrorMessage(null);
                   }}
                   className="w-full px-3 py-1.5 text-xs bg-white border border-[#97D3CD] rounded-md font-medium text-[#0C2C47]"
                 >
@@ -462,88 +382,14 @@ export const LoginPage: React.FC<LoginPageProps> = ({
               {/* Submit Button - Concise & User-Friendly */}
               <button
                 type="submit"
-                className="w-full py-2.5 px-4 bg-[#0C2C47] hover:bg-[#2D5652] text-white rounded-xl text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-2 cursor-pointer mt-1"
+                disabled={isLoggingIn}
+                className="w-full py-2.5 px-4 bg-[#0C2C47] hover:bg-[#2D5652] text-white rounded-xl text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-2 cursor-pointer mt-1 disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                <span>Sign In</span>
-                <ArrowRight className="w-4 h-4" />
+              <span>{isLoggingIn ? 'Signing In...' : 'Sign In'}</span>
+              {!isLoggingIn && <ArrowRight className="w-4 h-4" />}
               </button>
 
             </form>
-
-            {/* Quick 1-Click Credential Demo Pills */}
-            <div className="mt-5 pt-4 border-t border-[#97D3CD]/20">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-[#2D5652] block mb-2">
-                Demo Accounts (1-Click)
-              </span>
-
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 text-[11px]">
-                <button
-                  type="button"
-                  onClick={() => {
-                    handlePortalModeSelect('student');
-                    setSpecialIdInput('1GA21CS042');
-                    setPasswordInput('student@2026');
-                  }}
-                  className="p-2 text-left rounded-lg bg-[#E4F2EA] hover:bg-[#97D3CD]/30 border border-[#97D3CD]/60 text-[#0C2C47] transition-colors"
-                >
-                  <div className="font-bold flex items-center gap-1">
-                    <span className="w-2 h-2 rounded-full bg-[#2D5652]"></span>
-                    Student
-                  </div>
-                  <div className="text-[10px] text-[#2D5652] font-mono truncate">1GA21CS042</div>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    handlePortalModeSelect('placement_cell');
-                    handlePlacementSubRoleChange('pcc');
-                    setSpecialIdInput('PCC-OFFICER-01');
-                    setPasswordInput('pcc@gat2026');
-                  }}
-                  className="p-2 text-left rounded-lg bg-[#EFEAE6] hover:bg-[#E2A54D]/20 border border-[#E2A54D]/40 text-[#0C2C47] transition-colors"
-                >
-                  <div className="font-bold flex items-center gap-1">
-                    <span className="w-2 h-2 rounded-full bg-[#E2A54D]"></span>
-                    PCC (PO)
-                  </div>
-                  <div className="text-[10px] text-[#2D5652] font-mono truncate">PCC-OFFICER-01</div>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    handlePortalModeSelect('hr_staff');
-                    setSpecialIdInput('HR-AMAZON-01');
-                    setPasswordInput('amazon@hr2026');
-                  }}
-                  className="p-2 text-left rounded-lg bg-[#E4F2EA] hover:bg-[#97D3CD]/30 border border-[#2D5652]/30 text-[#0C2C47] transition-colors"
-                >
-                  <div className="font-bold flex items-center gap-1">
-                    <span className="w-2 h-2 rounded-full bg-[#2D5652]"></span>
-                    HR Recruiter
-                  </div>
-                  <div className="text-[10px] text-[#2D5652] font-mono truncate">HR-AMAZON-01</div>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    handlePortalModeSelect('admin');
-                    setSpecialIdInput('ADMIN-GAT-ROOT');
-                    setPasswordInput('admin@root2026');
-                  }}
-                  className="p-2 text-left rounded-lg bg-[#EFEAE6] hover:bg-slate-200 border border-slate-300 text-[#0C2C47] transition-colors"
-                >
-                  <div className="font-bold flex items-center gap-1">
-                    <span className="w-2 h-2 rounded-full bg-[#0C2C47]"></span>
-                    Admin
-                  </div>
-                  <div className="text-[10px] text-[#2D5652] font-mono truncate">ADMIN-GAT-ROOT</div>
-                </button>
-              </div>
-            </div>
-
           </div>
 
         </div>

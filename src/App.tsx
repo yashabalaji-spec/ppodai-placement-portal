@@ -34,17 +34,12 @@ import {
 } from 'lucide-react';
 
 export default function App() {
-  // Authentication session state - always starts from the Login page on every visit
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  // Authentication session state
+const [isAuthenticated, setIsAuthenticated] = useState(false);
+const [isCheckingSession, setIsCheckingSession] = useState(true);
 
-  // Current logged in user
-  const [currentUser, setCurrentUser] = useState<UserAccount>(() => {
-    const saved = localStorage.getItem('gat_current_user');
-    if (saved) {
-      try { return JSON.parse(saved); } catch (e) { /* fallback */ }
-    }
-    return INITIAL_USERS[7]; // Default to Student Rohan Sharma
-  });
+// Placeholder user until the backend verifies the session
+const [currentUser, setCurrentUser] = useState<UserAccount>(INITIAL_USERS[7]);
 
   // Students list with persistence
   const [students, setStudents] = useState<StudentProfile[]>(() => {
@@ -74,29 +69,102 @@ export default function App() {
     reason: ''
   });
 
-  // Sync to local storage
-  useEffect(() => {
-    localStorage.setItem('gat_current_user', JSON.stringify(currentUser));
-  }, [currentUser]);
+  // Keep student data persistence
+useEffect(() => {
+  localStorage.setItem('gat_students', JSON.stringify(students));
+}, [students]);
 
-  useEffect(() => {
-    localStorage.setItem('gat_students', JSON.stringify(students));
-  }, [students]);
+// Restore authenticated session from the backend
+useEffect(() => {
+  const checkSession = async () => {
+    try {
+      const response = await fetch('/api/auth/me', {
+        method: 'GET',
+        credentials: 'same-origin'
+      });
 
-  // Purge any legacy persistent login key on startup so the site always begins on the login page
+      if (response.ok) {
+        const data = await response.json();
+        setCurrentUser(data.user);
+        setIsAuthenticated(true);
+      }
+    } catch (error) {
+      console.error('Session check failed:', error);
+    } finally {
+      setIsCheckingSession(false);
+    }
+  };
+
+  checkSession();
+}, []);
+
+  // Load the logged-in student's profile from PostgreSQL.
   useEffect(() => {
-    localStorage.removeItem('gat_authenticated');
-  }, []);
+    if (!isAuthenticated || currentUser.role !== 'student') {
+      return;
+    }
+
+    const loadStudentProfile = async () => {
+      try {
+        const response = await fetch('/api/student/profile', {
+          method: 'GET',
+          credentials: 'same-origin'
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          console.error('Student profile loading failed:', data.message);
+          return;
+        }
+
+        const databaseStudent = data.student as StudentProfile;
+
+        setStudents(prev => {
+          const existingStudent = prev.some(
+            student => student.usn === databaseStudent.usn
+          );
+
+          if (existingStudent) {
+            return prev.map(student =>
+              student.usn === databaseStudent.usn
+                ? databaseStudent
+                : student
+            );
+          }
+
+          return [...prev, databaseStudent];
+        });
+
+        console.log('Student profile loaded from PostgreSQL.');
+      } catch (error) {
+        console.error('Student profile loading error:', error);
+      }
+    };
+
+    loadStudentProfile();
+  }, [isAuthenticated, currentUser.role, currentUser.usn]);
+
 
   const handleLoginSuccess = (user: UserAccount) => {
     setCurrentUser(user);
     setIsAuthenticated(true);
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+  try {
+    await fetch('/api/auth/logout', {
+      method: 'POST',
+      credentials: 'same-origin'
+    });
+  } catch (error) {
+    console.error('Logout request failed:', error);
+  } finally {
     setIsAuthenticated(false);
+    setCurrentUser(INITIAL_USERS[7]);
     setAccessDeniedData({ isOpen: false, reason: '' });
-  };
+  }
+};
 
   const handleUpdateStudentProfile = (updatedProfile: StudentProfile) => {
     setStudents(prev => prev.map(s => s.usn === updatedProfile.usn ? updatedProfile : s));
@@ -184,7 +252,14 @@ export default function App() {
 
   // Find active student object if student role is active
   const activeStudentProfile = students.find(s => s.usn === currentUser.usn) || students[0];
-
+   // Wait until the backend verifies the existing session
+if (isCheckingSession) {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-[#F8F9FA]">
+      <p className="text-sm text-gray-600">Checking your session...</p>
+    </div>
+  );
+}
   // If not authenticated, show the special ID & password Login Page!
   if (!isAuthenticated) {
     return (
