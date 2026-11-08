@@ -48,13 +48,61 @@ export const PCCDashboard: React.FC<PCCDashboardProps> = ({
   const [newVenue, setNewVenue] = useState('CCC Lab 2 & Placement Cell');
   const [newBranches, setNewBranches] = useState<string[]>(['CSE', 'ISE', 'AIML', 'ECE']);
 
-  const handleCreateDrive = (e: React.FormEvent) => {
-    e.preventDefault();
+  
+const handleCreateDrive = async (e: React.FormEvent) => {
+  e.preventDefault();
+
+  try {
+    // Find the actual company ID from PostgreSQL-loaded companies
+    const selectedCompany = companies.find(
+      (company) => company.name === newCompany
+    );
+
+    if (!selectedCompany) {
+      alert('Selected company was not found. Please select a valid company.');
+      return;
+    }
+
+    const response = await fetch('/api/drives', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      credentials: 'include',
+      body: JSON.stringify({
+        companyId: selectedCompany.id,
+        roleTitle: newRole,
+        ctcLPA: Number(newCtc),
+        minCGPA: 7.0,
+        maxBacklogsAllowed: 0,
+        driveDate: newDate,
+        venue: newVenue,
+        targetBranches: newBranches,
+        requiredSkills: [],
+        jobDescription: '',
+        status: 'Upcoming',
+        rounds: [
+          {
+            roundNumber: 1,
+            roundName: 'Online Coding / Technical Assessment',
+            date: newDate,
+            venue: newVenue
+          }
+        ]
+      })
+    });
+
+    const result = await response.json();
+
+    if (!response.ok || !result.success) {
+      throw new Error(result.message || 'Failed to create placement drive.');
+    }
+
     const driveObj: PlacementDrive = {
-      id: `d_${Date.now()}`,
-      driveCode: `DRV-2026-${newCompany.substring(0, 3).toUpperCase()}-${Math.floor(10 + Math.random() * 90)}`,
-      companyId: 'c_custom',
-      companyName: newCompany,
+      id: result.driveId,
+      driveCode: result.driveCode,
+      companyId: selectedCompany.id,
+      companyName: selectedCompany.name,
       roleTitle: newRole,
       ctcLPA: Number(newCtc),
       targetBranches: newBranches,
@@ -63,15 +111,35 @@ export const PCCDashboard: React.FC<PCCDashboardProps> = ({
       driveDate: newDate,
       venue: newVenue,
       status: 'Upcoming',
-      eligibleStudentCount: 210,
+      eligibleStudentCount: 0,
       shortlistedCount: 0,
       rounds: [
-        { roundNumber: 1, roundName: 'Online Coding / Technical Assessment', date: `${newDate} 10:00 AM`, venue: newVenue, qualifiedStudents: [] }
+        {
+          roundNumber: 1,
+          roundName: 'Online Coding / Technical Assessment',
+          date: newDate,
+          venue: newVenue,
+          qualifiedStudents: []
+        }
       ]
     };
+
     onAddDrive(driveObj);
     setShowScheduleModal(false);
-  };
+
+    alert('Placement drive created and saved successfully!');
+
+  } catch (error) {
+    console.error('Create drive error:', error);
+
+    alert(
+      error instanceof Error
+        ? error.message
+        : 'Something went wrong while creating the drive.'
+    );
+  }
+};
+
 
   return (
     <div className="space-y-6">

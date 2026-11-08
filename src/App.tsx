@@ -41,18 +41,12 @@ const [isCheckingSession, setIsCheckingSession] = useState(true);
 // Placeholder user until the backend verifies the session
 const [currentUser, setCurrentUser] = useState<UserAccount>(INITIAL_USERS[7]);
 
-  // Students list with persistence
-  const [students, setStudents] = useState<StudentProfile[]>(() => {
-    const saved = localStorage.getItem('gat_students');
-    if (saved) {
-      try { return JSON.parse(saved); } catch (e) { /* fallback */ }
-    }
-    return INITIAL_STUDENTS;
-  });
+ // Students are loaded from PostgreSQL after authentication.
+const [students, setStudents] = useState<StudentProfile[]>([]);
 
   // Companies & Drives
-  const [companies, setCompanies] = useState<Company[]>(INITIAL_COMPANIES);
-  const [drives, setDrives] = useState<PlacementDrive[]>(INITIAL_DRIVES);
+  const [companies, setCompanies] = useState<Company[]>([]);
+  const [drives, setDrives] = useState<PlacementDrive[]>([]);
 
   // Modals
   const [roleSwitcherOpen, setRoleSwitcherOpen] = useState(false);
@@ -68,12 +62,6 @@ const [currentUser, setCurrentUser] = useState<UserAccount>(INITIAL_USERS[7]);
     isOpen: false,
     reason: ''
   });
-
-  // Keep student data persistence
-useEffect(() => {
-  localStorage.setItem('gat_students', JSON.stringify(students));
-}, [students]);
-
 // Restore authenticated session from the backend
 useEffect(() => {
   const checkSession = async () => {
@@ -120,21 +108,7 @@ useEffect(() => {
 
         const databaseStudent = data.student as StudentProfile;
 
-        setStudents(prev => {
-          const existingStudent = prev.some(
-            student => student.usn === databaseStudent.usn
-          );
-
-          if (existingStudent) {
-            return prev.map(student =>
-              student.usn === databaseStudent.usn
-                ? databaseStudent
-                : student
-            );
-          }
-
-          return [...prev, databaseStudent];
-        });
+        setStudents([databaseStudent]);
 
         console.log('Student profile loaded from PostgreSQL.');
       } catch (error) {
@@ -144,7 +118,102 @@ useEffect(() => {
 
     loadStudentProfile();
   }, [isAuthenticated, currentUser.role, currentUser.usn]);
+// Load authorised student records for staff dashboards.
+useEffect(() => {
+  if (!isAuthenticated || currentUser.role === 'student') {
+    return;
+  }
 
+  const loadStudents = async () => {
+    try {
+      const response = await fetch('/api/students', {
+        method: 'GET',
+        credentials: 'same-origin'
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        console.error('Student list loading failed:', data.message);
+        return;
+      }
+
+      setStudents(data.students as StudentProfile[]);
+      console.log(
+        `Loaded ${data.count} student records from PostgreSQL.`
+      );
+    } catch (error) {
+      console.error('Student list loading error:', error);
+    }
+  };
+
+  loadStudents();
+}, [isAuthenticated, currentUser.role, currentUser.department]);
+// Load companies from PostgreSQL after authentication.
+useEffect(() => {
+  if (!isAuthenticated || currentUser.role === 'student') {
+    return;
+  }
+
+  const loadCompanies = async () => {
+    try {
+      const response = await fetch('/api/companies', {
+        method: 'GET',
+        credentials: 'same-origin'
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        console.error('Company loading failed:', data.message);
+        return;
+      }
+
+      setCompanies(data.companies as Company[]);
+
+      console.log(
+        `Loaded ${data.count} companies from PostgreSQL.`
+      );
+    } catch (error) {
+      console.error('Company loading error:', error);
+    }
+  };
+
+  loadCompanies();
+}, [isAuthenticated, currentUser.role]);
+
+  // Load placement drives from PostgreSQL after authentication.
+  useEffect(() => {
+    if (!isAuthenticated) {
+      return;
+    }
+
+    const loadDrives = async () => {
+      try {
+        const response = await fetch('/api/drives', {
+          method: 'GET',
+          credentials: 'same-origin'
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          console.error('Placement drives loading failed:', data.message);
+          return;
+        }
+
+        setDrives(data.drives as PlacementDrive[]);
+
+        console.log(
+          `Loaded ${data.count} placement drives from PostgreSQL.`
+        );
+      } catch (error) {
+        console.error('Placement drives loading error:', error);
+      }
+    };
+
+    loadDrives();
+  }, [isAuthenticated]);
 
   const handleLoginSuccess = (user: UserAccount) => {
     setCurrentUser(user);

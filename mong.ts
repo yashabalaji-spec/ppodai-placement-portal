@@ -21,7 +21,17 @@ export async function connectMongoDB(): Promise<Db> {
 
   database = client.db('ppodai');
 
-  console.log('MongoDB connected successfully!');
+// Create the AI screening reports collection if it doesn't exist.
+const collectionExists = await database
+  .listCollections({ name: 'ai_screening_reports' })
+  .hasNext();
+
+if (!collectionExists) {
+  await database.createCollection('ai_screening_reports');
+  console.log('Created MongoDB collection: ai_screening_reports');
+}
+
+console.log('MongoDB connected successfully!');
 
   return database;
 }

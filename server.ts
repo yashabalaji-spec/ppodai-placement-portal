@@ -1,4 +1,5 @@
 import express from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
@@ -32,6 +33,100 @@ const toSafeUser = (row: any) => ({
   usn: row.usn || '',
   company: row.company || ''
 });
+
+type AuthenticatedRequest = Request & {
+  authUser?: {
+    id: string;
+    role: string;
+    company?: string | null;
+    department?: string | null;
+    usn?: string | null;
+  };
+};
+
+// Verify the login cookie and confirm the account is still active.
+const requireAuth = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const token = req.cookies?.ppodai_token;
+    const secret = process.env.JWT_SECRET;
+
+    if (!token || !secret) {
+      return res.status(401).json({
+        error: 'Authentication required.'
+      });
+    }
+
+    const decoded = jwt.verify(token, secret) as {
+      sub: string;
+      role: string;
+    };
+
+    const result = await pool.query(
+  `SELECT id, role, company, department, usn
+   FROM users
+   WHERE id = $1 AND is_active IS TRUE
+   LIMIT 1`,
+  [decoded.sub]
+   );
+
+    const account = result.rows[0];
+
+    if (!account || account.role !== decoded.role) {
+      res.clearCookie('ppodai_token', { path: '/' });
+
+      return res.status(401).json({
+        error: 'Session is invalid. Please sign in again.'
+      });
+    }
+
+    (req as AuthenticatedRequest).authUser = {
+  id: account.id,
+  role: account.role,
+  company: account.company,
+  department: account.department,
+  usn: account.usn
+};
+
+    return next();
+
+  } catch {
+    res.clearCookie('ppodai_token', { path: '/' });
+
+    return res.status(401).json({
+      error: 'Session expired. Please sign in again.'
+    });
+  }
+};
+
+// Allow only the specified roles to access a protected endpoint.
+const requireRoles = (...allowedRoles: string[]) => {
+  return (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ) => {
+    const user = (req as AuthenticatedRequest).authUser;
+
+    if (!user) {
+      return res.status(401).json({
+        error: 'Authentication required.'
+      });
+    }
+
+    if (!allowedRoles.includes(user.role)) {
+      return res.status(403).json({
+        error: 'You are not authorised to access this resource.'
+      });
+    }
+
+    return next();
+  };
+};
+
 
 // 1. Login using an account stored in PostgreSQL.
 app.post('/api/auth/login', async (req, res) => {
@@ -387,6 +482,663 @@ app.get('/api/auth/me', async (req, res) => {
     return res.status(401).json({ message: 'Session expired. Please sign in again.' });
   }
 });
+// Retrieve companies from PostgreSQL.
+app.get(
+  '/api/companies',
+  requireAuth,
+  requireRoles(
+    'faculty_mgmt',
+    'principal',
+    'placement_dean',
+    'hod',
+    'pcc',
+    'fpc',
+    'spc',
+    'hr',
+    'admin'
+  ),
+  async (_req, res) => {
+    try {
+      const result = await pool.query(
+        `SELECT
+          id,
+          name,
+          industry,
+          website,
+          contact_person,
+          contact_email,
+          contact_phone,
+          tier,
+          visited_year,
+          created_at
+         FROM companies
+         ORDER BY name ASC`
+      );
+
+      const companies = result.rows.map((company: any) => ({
+        id: company.id,
+        name: company.name,
+        industry: company.industry || '',
+        website: company.website || '',
+        contactPerson: company.contact_person || '',
+        contactEmail: company.contact_email || '',
+        contactPhone: company.contact_phone || '',
+        tier: company.tier || '',
+        visitedYear: company.visited_year || null,
+        createdAt: company.created_at
+      }));
+
+      return res.json({
+        success: true,
+        count: companies.length,
+        companies
+      });
+
+    } catch (error) {
+      console.error('Company retrieval error:', error);
+
+      return res.status(500).json({
+        message: 'Unable to retrieve companies.'
+      });
+    }
+  }
+);
+
+app.get('/api/drives', requireAuth, async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT
+        d.*,
+        c.name AS company_name,
+        COALESCE(
+          (SELECT json_agg(s.skill_name)
+           FROM drive_required_skills s
+           WHERE s.drive_id = d.id),
+          '[]'::json
+        ) AS required_skills,
+        COALESCE(
+          (SELECT json_agg(b.branch_code)
+           FROM drive_target_branches b
+           WHERE b.drive_id = d.id),
+          '[]'::json
+        ) AS target_branches,
+        COALESCE(
+          (SELECT json_agg(
+            json_build_object(
+              'id', r.id,
+              'roundNumber', r.round_number,
+              'roundName', r.round_name,
+              'roundDate', r.round_date,
+              'venue', r.venue
+            ) ORDER BY r.round_number
+          )
+          FROM drive_rounds r
+          WHERE r.drive_id = d.id),
+          '[]'::json
+        ) AS rounds
+      FROM placement_drives d
+      LEFT JOIN companies c ON c.id = d.company_id
+      ORDER BY d.created_at DESC
+    `);
+
+    const drives = result.rows.map((row) => ({
+  id: row.id,
+  driveCode: row.drive_code,
+  companyId: row.company_id,
+  companyName: row.company_name,
+  roleTitle: row.role_title,
+
+  // Match the frontend PlacementDrive interface
+  ctcLPA: Number(row.ctc_lpa ?? 0),
+  minCGPA: Number(row.min_cgpa ?? 0),
+  maxBacklogsAllowed: row.max_backlogs_allowed ?? 0,
+
+  driveDate: row.drive_date,
+  venue: row.venue,
+  status: row.status,
+
+  eligibleStudentCount: 0,
+  enrolledCount: 0,
+  shortlistedCount: 0,
+
+  jobDescription: row.job_description,
+  meetingType: row.meeting_type,
+  teamsMeetingLink: row.teams_meeting_link,
+  isPublished: row.is_published,
+  scheduledBy: row.scheduled_by,
+  registrationDeadline: row.registration_deadline,
+  startTime: row.start_time,
+  endTime: row.end_time,
+
+  requiredSkills: row.required_skills,
+  targetBranches: row.target_branches,
+
+  rounds: row.rounds.map((round: any) => ({
+    roundNumber: round.roundNumber,
+    roundName: round.roundName,
+    date: round.roundDate,
+    venue: round.venue,
+    qualifiedStudents: []
+  }))
+}));
+
+    res.json({
+      success: true,
+      count: drives.length,
+      drives
+    });
+  } catch (error) {
+    console.error('Fetch placement drives error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch placement drives'
+    });
+  }
+});
+
+app.post(
+  '/api/drives',
+  requireAuth,
+  requireRoles('pcc', 'placement_dean', 'admin'),
+  async (req, res) => {
+    let client;
+
+    try {
+      client = await pool.connect();
+
+      const {
+        companyId,
+        roleTitle,
+        ctcLPA,
+        minCGPA = 7.0,
+        maxBacklogsAllowed = 0,
+        driveDate,
+        venue,
+        targetBranches = [],
+        requiredSkills = [],
+        rounds = [],
+        jobDescription = '',
+        status = 'Upcoming'
+      } = req.body;
+
+      // 1. Validate required fields
+      if (
+        !companyId ||
+        !roleTitle?.trim() ||
+        !driveDate ||
+        !venue?.trim()
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: 'Company, role title, drive date and venue are required.'
+        });
+      }
+
+      // 2. Validate arrays
+      if (
+        !Array.isArray(targetBranches) ||
+        !Array.isArray(requiredSkills) ||
+        !Array.isArray(rounds)
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: 'Branches, skills and rounds must be arrays.'
+        });
+      }
+
+      // 3. Validate numeric fields
+      if (
+        !Number.isFinite(Number(ctcLPA)) ||
+        !Number.isFinite(Number(minCGPA)) ||
+        !Number.isFinite(Number(maxBacklogsAllowed))
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid CTC, CGPA or backlog value.'
+        });
+      }
+
+      const allowedStatuses = [
+        'Upcoming',
+        'In Progress',
+        'Completed',
+        'Cancelled'
+      ];
+
+      if (!allowedStatuses.includes(status)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid placement drive status.'
+        });
+      }
+
+      // Remove duplicate branch codes and clean skill names
+      const branches = [...new Set(targetBranches)];
+      const skills = [
+        ...new Set(
+          requiredSkills
+            .filter((skill: unknown) => typeof skill === 'string')
+            .map((skill: string) => skill.trim())
+            .filter(Boolean)
+        )
+      ];
+
+      // 4. Start database transaction
+      await client.query('BEGIN');
+
+      // 5. Verify selected company
+      const companyResult = await client.query(
+        'SELECT id FROM companies WHERE id = $1',
+        [companyId]
+      );
+
+      if (companyResult.rows.length === 0) {
+        throw new Error('Selected company does not exist.');
+      }
+
+      // 6. Verify selected branches
+      if (branches.length > 0) {
+        const branchResult = await client.query(
+          `SELECT branch_code
+           FROM branches
+           WHERE branch_code = ANY($1::varchar[])`,
+          [branches]
+        );
+
+        if (branchResult.rows.length !== branches.length) {
+          throw new Error('One or more selected branches do not exist.');
+        }
+      }
+
+      // 7. Generate drive ID and drive code
+      const driveId = `drv_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+      const driveCode = `DRV-${String(driveDate).slice(0, 4)}-${Date.now().toString().slice(-6)}`;
+
+      const authUser = (req as AuthenticatedRequest).authUser;
+
+      // 8. Insert placement drive
+      await client.query(
+        `INSERT INTO placement_drives (
+          id,
+          drive_code,
+          company_id,
+          role_title,
+          ctc_lpa,
+          min_cgpa,
+          max_backlogs_allowed,
+          drive_date,
+          venue,
+          status,
+          job_description,
+          scheduled_by
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+        [
+          driveId,
+          driveCode,
+          companyId,
+          roleTitle.trim(),
+          Number(ctcLPA),
+          Number(minCGPA),
+          Number(maxBacklogsAllowed),
+          driveDate,
+          venue.trim(),
+          status,
+          jobDescription,
+          authUser?.id ?? null
+        ]
+      );
+
+      // 9. Insert required skills
+      for (const skill of skills) {
+        await client.query(
+          `INSERT INTO drive_required_skills (drive_id, skill_name)
+           VALUES ($1, $2)`,
+          [driveId, skill]
+        );
+      }
+
+      // 10. Insert target branches
+      for (const branch of branches) {
+        await client.query(
+          `INSERT INTO drive_target_branches (drive_id, branch_code)
+           VALUES ($1, $2)`,
+          [driveId, branch]
+        );
+      }
+
+      // 11. Insert placement rounds
+      for (const round of rounds) {
+        if (!round.roundName?.trim()) {
+          throw new Error('Every round must have a round name.');
+        }
+
+        await client.query(
+          `INSERT INTO drive_rounds (
+            drive_id,
+            round_number,
+            round_name,
+            round_date,
+            venue
+          )
+          VALUES ($1, $2, $3, $4, $5)`,
+          [
+            driveId,
+            Number(round.roundNumber),
+            round.roundName.trim(),
+            round.date || null,
+            round.venue || venue.trim()
+          ]
+        );
+      }
+
+      // 12. Save all changes
+      await client.query('COMMIT');
+
+      return res.status(201).json({
+        success: true,
+        message: 'Placement drive created successfully.',
+        driveId,
+        driveCode
+      });
+
+    } catch (error) {
+      if (client) {
+        await client.query('ROLLBACK');
+      }
+
+      console.error('Create placement drive error:', error);
+
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error
+          ? error.message
+          : 'Failed to create placement drive.'
+      });
+
+    } finally {
+      client?.release();
+    }
+  }
+);
+
+// Get the authorised student list for institutional dashboards.
+app.get(
+  '/api/students',
+  requireAuth,
+  requireRoles(
+    'faculty_mgmt',
+    'principal',
+    'placement_dean',
+    'hod',
+    'pcc',
+    'fpc',
+    'spc',
+    'hr',
+    'admin'
+  ),
+  async (req, res) => {
+    try {
+      const user = (req as AuthenticatedRequest).authUser!;
+
+      // Build role-specific student access.
+      let studentQuery = `
+        SELECT
+          usn, full_name, first_name, middle_name, last_name,
+          pursuing_degree, department, branch_code, section,
+          semester, batch_year, mobile_no, gender, date_of_birth,
+          year_of_joining, type_of_entry, college_email,
+          personal_email, placement_email,
+          is_placement_mail_activated, blood_group,
+          physically_challenged, interested_in_higher_studies,
+          tenth_percentage, tenth_year, tenth_school, tenth_board,
+          twelfth_percentage, twelfth_year, twelfth_college,
+          twelfth_board, cgpa, current_backlogs, backlog_history,
+          year_back, gap_before_degree_years, gap_in_degree_years,
+          registered_for_placement_assistance,
+          has_external_certifications, is_placed, is_locked
+        FROM students
+      `;
+
+      const queryParams: any[] = [];
+
+      if (user.role === 'hod') {
+        if (!user.department) {
+          return res.status(403).json({
+            message: 'Your account has no assigned department.'
+          });
+        }
+
+        studentQuery += ' WHERE branch_code = $1';
+        queryParams.push(user.department);
+      } else if (user.role === 'hr') {
+        studentQuery += `
+          WHERE LOWER(TRIM(COALESCE(
+            registered_for_placement_assistance, ''
+          ))) IN ('yes', 'true', '1')
+        `;
+      }
+
+      studentQuery += ' ORDER BY full_name ASC';
+
+      const studentResult = await pool.query(
+        studentQuery,
+        queryParams
+      );
+
+      const rows = studentResult.rows;
+      const usns = rows.map((student: any) => student.usn);
+
+      if (usns.length === 0) {
+        return res.json({ success: true, students: [] });
+      }
+
+      // Fetch related records in batches instead of querying each student separately.
+      const [
+        skills,
+        internships,
+        projects,
+        rnd,
+        achievements,
+        hobbies,
+        offers
+      ] = await Promise.all([
+        pool.query(
+          'SELECT * FROM student_skills WHERE student_usn = ANY($1::varchar[])',
+          [usns]
+        ),
+        pool.query(
+          'SELECT * FROM student_internships WHERE student_usn = ANY($1::varchar[])',
+          [usns]
+        ),
+        pool.query(
+          'SELECT * FROM student_projects WHERE student_usn = ANY($1::varchar[])',
+          [usns]
+        ),
+        pool.query(
+          'SELECT * FROM student_rnd WHERE student_usn = ANY($1::varchar[])',
+          [usns]
+        ),
+        pool.query(
+          'SELECT * FROM student_achievements WHERE student_usn = ANY($1::varchar[])',
+          [usns]
+        ),
+        pool.query(
+          'SELECT * FROM student_hobbies WHERE student_usn = ANY($1::varchar[])',
+          [usns]
+        ),
+        pool.query(
+          `SELECT o.*, c.name AS company_name
+           FROM student_offers o
+           LEFT JOIN companies c ON c.id = o.company_id
+           WHERE o.student_usn = ANY($1::varchar[])`,
+          [usns]
+        )
+      ]);
+
+      const groupByUSN = (records: any[]) => {
+        const grouped = new Map<string, any[]>();
+
+        for (const record of records) {
+          const list = grouped.get(record.student_usn) || [];
+          list.push(record);
+          grouped.set(record.student_usn, list);
+        }
+
+        return grouped;
+      };
+
+      const skillsByUSN = groupByUSN(skills.rows);
+      const internshipsByUSN = groupByUSN(internships.rows);
+      const projectsByUSN = groupByUSN(projects.rows);
+      const rndByUSN = groupByUSN(rnd.rows);
+      const achievementsByUSN = groupByUSN(achievements.rows);
+      const hobbiesByUSN = groupByUSN(hobbies.rows);
+      const offersByUSN = groupByUSN(offers.rows);
+
+      const numberValue = (value: any) =>
+        value === null || value === undefined ? 0 : Number(value);
+
+      const dateValue = (value: any) =>
+        value ? new Date(value).toISOString().slice(0, 10) : '';
+
+      const students = rows.map((s: any) => {
+        const studentSkills = skillsByUSN.get(s.usn) || [];
+        const studentInternships = internshipsByUSN.get(s.usn) || [];
+        const studentProjects = projectsByUSN.get(s.usn) || [];
+        const studentRnd = rndByUSN.get(s.usn) || [];
+        const studentAchievements = achievementsByUSN.get(s.usn) || [];
+        const studentHobbies = hobbiesByUSN.get(s.usn) || [];
+        const studentOffers = offersByUSN.get(s.usn) || [];
+
+        // HR receives placement-relevant information only.
+        const isHR = user.role === 'hr';
+
+        return {
+          usn: s.usn,
+          fullName: s.full_name,
+          firstName: s.first_name,
+          middleName: s.middle_name || '',
+          lastName: s.last_name || '',
+          pursuingDegree: s.pursuing_degree || '',
+          department: s.department || s.branch_code || '',
+          section: s.section || 'A',
+          semester: numberValue(s.semester),
+          batchYear: numberValue(s.batch_year),
+
+          mobileNo: isHR ? '' : (s.mobile_no || ''),
+          gender: s.gender || 'Other',
+          dateOfBirth: isHR ? '' : dateValue(s.date_of_birth),
+          yearOfJoining: numberValue(s.year_of_joining),
+          typeOfEntry: s.type_of_entry || 'Regular',
+          collegeEmail: s.college_email || '',
+          personalEmailId: isHR ? '' : (s.personal_email || ''),
+          placementEmailId: s.placement_email || '',
+          isPlacementMailActivated: Boolean(s.is_placement_mail_activated),
+          bloodGroup: s.blood_group || '',
+          physicallyChallenged: s.physically_challenged || 'No',
+
+          interestedInHigherStudies:
+            s.interested_in_higher_studies || 'No',
+
+          tenthPercentage: numberValue(s.tenth_percentage),
+          tenthPassingYear: numberValue(s.tenth_year),
+          tenthSchoolName: s.tenth_school || '',
+          tenthBoardName: s.tenth_board || '',
+
+          twelfthOrDiplomaPercentage: numberValue(s.twelfth_percentage),
+          twelfthOrDiplomaPassingYear: numberValue(s.twelfth_year),
+          twelfthOrDiplomaCollegeName: s.twelfth_college || '',
+          twelfthOrDiplomaBoardName: s.twelfth_board || '',
+
+          cgpa: numberValue(s.cgpa),
+          currentBacklogs: numberValue(s.current_backlogs),
+          backlogHistory: numberValue(s.backlog_history),
+          yearBack: s.year_back || 'No',
+          gapBeforeDegreeYears: numberValue(s.gap_before_degree_years),
+          gapInDegreeYears: numberValue(s.gap_in_degree_years),
+          registeredForPlacementAssistance:
+            s.registered_for_placement_assistance || 'No',
+          hasExternalCertifications:
+            s.has_external_certifications || 'No',
+
+          skills: studentSkills.map((r: any) => ({
+            name: r.skill_name,
+            category: r.category || 'programming',
+            rating: numberValue(r.rating)
+          })),
+
+          internships: studentInternships.map((r: any) => ({
+            id: r.id,
+            companyName: r.company_name,
+            domain: r.domain || '',
+            durationMonths: numberValue(r.duration_months),
+            startDate: dateValue(r.start_date),
+            endDate: dateValue(r.end_date),
+            description: r.description || '',
+            isVerified: Boolean(r.is_verified)
+          })),
+
+          projects: studentProjects.map((r: any) => ({
+            id: r.id,
+            title: r.title,
+            domain: r.domain || '',
+            techStack: r.tech_stack || [],
+            description: r.description || '',
+            link: r.project_link || ''
+          })),
+
+          rndWorks: studentRnd.map((r: any) => ({
+            id: r.id,
+            type: r.type,
+            title: r.title,
+            journalOrConference: r.journal_or_conference || '',
+            year: numberValue(r.year),
+            status: r.status || '',
+            doiOrPatentNo: r.doi_or_patent_no || ''
+          })),
+
+          achievementsAcademic: studentAchievements
+            .filter((r: any) => r.achievement_type === 'academic')
+            .map((r: any) => r.description),
+
+          achievementsNonAcademic: studentAchievements
+            .filter((r: any) => r.achievement_type !== 'academic')
+            .map((r: any) => r.description),
+
+          hobbiesAndInterests: studentHobbies.map((r: any) => r.hobby),
+
+          offers: studentOffers.map((r: any) => ({
+            id: r.id,
+            companyId: r.company_id,
+            companyName: r.company_name || '',
+            packageLPA: numberValue(r.package_lpa),
+            roleTitle: r.role_title || '',
+            offerLetterDate: dateValue(r.offer_letter_date),
+            tier: r.tier,
+            status: r.offer_status
+          })),
+
+          isPlaced: Boolean(s.is_placed),
+          isLocked: Boolean(s.is_locked)
+        };
+      });
+
+      return res.json({
+        success: true,
+        count: students.length,
+        students
+      });
+
+    } catch (error) {
+      console.error('Student list retrieval error:', error);
+
+      return res.status(500).json({
+        message: 'Unable to retrieve student records.'
+      });
+    }
+  }
+);
 
 // 3. Get the authenticated student's complete profile from PostgreSQL.
 app.get('/api/student/profile', async (req, res) => {
@@ -941,9 +1693,23 @@ app.get('/api/health', (req, res) => {
     timestamp: new Date().toISOString()
   });
 });
+app.get('/api/test-students', requireAuth, async (req, res) => {
+  try {
+    const result = await pool.query(
+      'SELECT COUNT(*) AS total FROM students'
+    );
 
+    res.json({
+      success: true,
+      totalStudents: Number(result.rows[0].total)
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, message: 'Database query failed' });
+  }
+});
 // PostgreSQL database connection test
-app.get('/api/db-health', async (req, res) => {
+app.get('/api/db-health', requireAuth, requireRoles('admin'), async (req, res) => {
   try {
     const result = await pool.query(
       'SELECT current_database() AS database, NOW() AS server_time'
@@ -965,7 +1731,7 @@ app.get('/api/db-health', async (req, res) => {
 });
 
 // MongoDB database connection test
-app.get('/api/mongo-health', async (req, res) => {
+app.get('/api/mongo-health', requireAuth, requireRoles('admin'), async (req, res) => {
   try {
     const db = await connectMongoDB();
     await db.command({ ping: 1 });
@@ -984,8 +1750,61 @@ app.get('/api/mongo-health', async (req, res) => {
   }
 });
 
+// Retrieve previously saved AI screening reports.
+app.get(
+  '/api/screening-reports',
+  requireAuth,
+  requireRoles('hr', 'admin'),
+  async (req, res) => {
+    try {
+      const authUser = (req as AuthenticatedRequest).authUser;
+
+      if (!authUser) {
+        return res.status(401).json({
+          error: 'Authentication required.'
+        });
+      }
+
+      const db = await connectMongoDB();
+
+      // HR sees only their own reports; admin sees all reports.
+      const filter =
+        authUser.role === 'admin'
+          ? {}
+          : { createdByUserId: authUser.id };
+
+      const reports = await db
+        .collection('ai_screening_reports')
+        .find(filter)
+        .sort({ createdAt: -1 })
+        .limit(100)
+        .toArray();
+
+      return res.json({
+        success: true,
+        count: reports.length,
+        reports: reports.map(report => ({
+          ...report,
+          _id: report._id.toString()
+        }))
+      });
+
+    } catch (error) {
+      console.error('Error retrieving screening reports:', error);
+
+      return res.status(500).json({
+        error: 'Unable to retrieve screening reports.'
+      });
+    }
+  }
+);
+
 // Gemini LLM JD Match & Resume Evaluation Endpoint
-app.post('/api/evaluate-jd', async (req, res) => {
+app.post(
+  '/api/evaluate-jd',
+  requireAuth,
+  requireRoles('hr', 'admin'),
+  async (req, res) => {
   try {
     const { jdText, jobTitle, companyName, candidates } = req.body;
 
@@ -1002,7 +1821,7 @@ app.post('/api/evaluate-jd', async (req, res) => {
     }
 
     // Initialize GoogleGenAI SDK with modern pattern
-    const ai = new GoogleGenAI();
+    const ai = new GoogleGenAI({ apiKey });
 
     // Prepare concise profiles of candidates for the prompt
     const candidateSummaries = candidates.slice(0, 15).map((c: any) => ({
@@ -1076,11 +1895,34 @@ The JSON must follow this exact schema:
       parsedData = JSON.parse(cleanJson);
     }
 
-    return res.json({
-      success: true,
-      source: 'gemini-3.8-flash',
-      data: parsedData
-    });
+   // 1. Save the completed AI screening report in MongoDB.
+const authUser = (req as AuthenticatedRequest).authUser;
+
+if (!authUser) {
+  return res.status(401).json({ error: 'Authentication required.' });
+}
+
+const db = await connectMongoDB();
+
+const savedReport = await db.collection('ai_screening_reports').insertOne({
+  createdByUserId: authUser.id,
+  createdByRole: authUser.role,
+  companyName: authUser.company || companyName || null,
+  jobTitle: jobTitle || null,
+  jdText,
+  extractedRequirements: parsedData.extractedRequirements || null,
+  evaluations: parsedData.evaluations,
+  model: 'gemini-3.8-flash',
+  createdAt: new Date()
+});
+
+// 2. Return the result to the frontend.
+return res.json({
+  success: true,
+  source: 'gemini-3.8-flash',
+  reportId: savedReport.insertedId.toString(),
+  data: parsedData
+});
   } catch (error: any) {
     console.error('Error in /api/evaluate-jd:', error);
     return res.status(500).json({
