@@ -88,6 +88,7 @@ export interface StudentProfile {
   lastName: string;
   pursuingDegree: string; // e.g. B.E / B.Tech / M.Tech / MCA
   department: string;     // Branch name, e.g., 'CSE', 'ECE', 'ISE', 'AIML'
+  branchCode?: string;
   section: 'A' | 'B' | 'C';
   semester: number;       // Semester 1 to 8 (Key requirement: multi-semester diversity)
   batchYear: number;      // e.g. 2025, 2026, 2027, 2028
@@ -177,6 +178,8 @@ export interface ProfileEditRequest {
   status: 'pending' | 'approved' | 'rejected';
   hodRemarks?: string;
   reviewedAt?: string;
+  section?: string;
+  cgpa?: number;
 }
 
 export function checkRoleAccess(

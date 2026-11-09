@@ -90,9 +90,57 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
   // Profile Lock & HOD Permission Request State
   const [requestModalOpen, setRequestModalOpen] = useState(false);
   const [requestReason, setRequestReason] = useState('');
+  const [requestSubmitting, setRequestSubmitting] = useState(false);
+  const [requestError, setRequestError] = useState('');
+  const [requestStatusError, setRequestStatusError] = useState('');
 
-  // Lock status calculation: locked if isLocked is true AND not currently approved
-  const isProfileLocked = profile.isLocked !== false && profile.editPermissionStatus !== 'approved';
+  const isProfileLocked = profile.isLocked !== false;
+
+  useEffect(() => {
+    let active = true;
+    const refreshRequestStatus = async () => {
+      try {
+        const response = await fetch('/api/student/profile-edit-request', {
+          credentials: 'same-origin'
+        });
+        const data = await response.json() as {
+          message?: string;
+          isLocked?: boolean;
+          request?: {
+            status: 'pending' | 'approved' | 'rejected';
+            reason: string;
+            requestedAt: string;
+            hodRemarks?: string;
+          } | null;
+        };
+        if (!response.ok) {
+          throw new Error(data.message || 'Unable to refresh your request status.');
+        }
+        if (!active) return;
+        setRequestStatusError('');
+        setProfile(current => ({
+          ...current,
+          isLocked: data.isLocked !== false,
+          editPermissionStatus: data.request?.status || 'none',
+          editPermissionReason: data.request?.reason,
+          editPermissionRequestedAt: data.request?.requestedAt,
+          editPermissionRemarks: data.request?.hodRemarks
+        }));
+      } catch (error) {
+        if (!active) return;
+        setRequestStatusError(
+          error instanceof Error ? error.message : 'Unable to refresh your request status.'
+        );
+      }
+    };
+
+    void refreshRequestStatus();
+    const statusRefreshTimer = window.setInterval(() => void refreshRequestStatus(), 15000);
+    return () => {
+      active = false;
+      window.clearInterval(statusRefreshTimer);
+    };
+  }, []);
 
   
 const handleSave = async (e: React.FormEvent) => {
@@ -106,7 +154,8 @@ const handleSave = async (e: React.FormEvent) => {
       isLocked: true,
       lockTimestamp: new Date().toISOString(),
       editPermissionStatus: 'none',
-      editPermissionReason: undefined
+      editPermissionReason: undefined,
+      editPermissionRemarks: undefined
     };
 
     const response = await fetch('/api/student/profile', {
@@ -125,8 +174,10 @@ const handleSave = async (e: React.FormEvent) => {
       return;
     }
 
-    setProfile(updated);
-    onUpdateProfile(updated);
+    const savedProfile = { ...updated, isLocked: data.isLocked !== false };
+    setProfile(savedProfile);
+    setRequestStatusError('');
+    onUpdateProfile(savedProfile);
     setSaveSuccess(true);
 
     setTimeout(() => setSaveSuccess(false), 3000);
@@ -137,26 +188,55 @@ const handleSave = async (e: React.FormEvent) => {
   }
 };
 
-  const handleSendHODRequest = (e: React.FormEvent) => {
+  const handleSendHODRequest = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!requestReason.trim()) return;
+    const reason = requestReason.trim();
+    if (!reason) {
+      setRequestError('Please explain why your profile needs to be edited.');
+      return;
+    }
 
-    const updated: StudentProfile = {
-      ...profile,
-      editPermissionStatus: 'pending',
-      editPermissionReason: requestReason.trim(),
-      editPermissionRequestedAt: new Date().toLocaleString('en-IN', { 
-        day: 'numeric', 
-        month: 'short', 
-        year: 'numeric', 
-        hour: '2-digit', 
-        minute: '2-digit' 
-      })
-    };
-    setProfile(updated);
-    onUpdateProfile(updated);
-    setRequestModalOpen(false);
-    setRequestReason('');
+    setRequestSubmitting(true);
+    setRequestError('');
+    try {
+      const response = await fetch('/api/student/profile-edit-requests', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ reason })
+      });
+      const data = await response.json() as {
+        message?: string;
+        request?: {
+          status: 'pending' | 'approved' | 'rejected';
+          reason: string;
+          requestedAt: string;
+          hodRemarks?: string;
+        };
+      };
+      if (!response.ok || !data.request) {
+        throw new Error(data.message || 'Unable to submit your profile edit request.');
+      }
+
+      const updated: StudentProfile = {
+        ...profile,
+        isLocked: true,
+        editPermissionStatus: data.request.status,
+        editPermissionReason: data.request.reason,
+        editPermissionRequestedAt: data.request.requestedAt,
+        editPermissionRemarks: data.request.hodRemarks
+      };
+      setProfile(updated);
+      onUpdateProfile(updated);
+      setRequestModalOpen(false);
+      setRequestReason('');
+    } catch (error) {
+      setRequestError(
+        error instanceof Error ? error.message : 'Unable to submit your profile edit request.'
+      );
+    } finally {
+      setRequestSubmitting(false);
+    }
   };
 
   const handleAddSkill = () => {
@@ -463,13 +543,18 @@ const handleSave = async (e: React.FormEvent) => {
                 </div>
                 <p className="text-[11px] text-[#2D5652]/80 mt-0.5">
                   {profile.editPermissionStatus === 'approved'
-                    ? `Approved by HOD. You can edit and save your profile.`
+                    ? `Approved by HOD. You can edit and save your profile.${profile.editPermissionRemarks ? ` ${profile.editPermissionRemarks}` : ''}`
                     : profile.editPermissionStatus === 'pending'
                     ? `Request sent to HOD. Awaiting review.`
                     : profile.editPermissionStatus === 'rejected'
-                    ? `Request rejected by HOD. Contact department office.`
+                    ? `Request rejected by HOD.${profile.editPermissionRemarks ? ` ${profile.editPermissionRemarks}` : ' Contact department office.'}`
                     : 'Profile details are locked for campus drives. Request HOD approval to update.'}
                 </p>
+                {requestStatusError && (
+                  <p role="alert" className="text-[11px] text-rose-700 mt-1">
+                    {requestStatusError}
+                  </p>
+                )}
               </div>
             </div>
 
@@ -1581,26 +1666,36 @@ const handleSave = async (e: React.FormEvent) => {
                 <textarea
                   rows={4}
                   required
+                  maxLength={2000}
                   placeholder="Specify what details you need to modify (e.g., Updated 6th semester CGPA from 8.8 to 9.14; Added AWS Cloud Practitioner certificate; Corrected contact number)..."
                   value={requestReason}
                   onChange={(e) => setRequestReason(e.target.value)}
                   className="w-full text-xs p-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 text-slate-900"
                 />
               </div>
+              {requestError && (
+                <p role="alert" className="text-xs text-rose-700">
+                  {requestError}
+                </p>
+              )}
 
               <div className="pt-2 flex items-center justify-end gap-2">
                 <button
                   type="button"
-                  onClick={() => setRequestModalOpen(false)}
+                  onClick={() => {
+                    setRequestModalOpen(false);
+                    setRequestError('');
+                  }}
                   className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold shadow-xs transition-colors"
+                  disabled={requestSubmitting}
+                  className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 disabled:opacity-60 text-white text-xs font-bold shadow-xs transition-colors"
                 >
-                  Submit Request to HOD
+                  {requestSubmitting ? 'Submitting...' : 'Submit Request to HOD'}
                 </button>
               </div>
             </form>

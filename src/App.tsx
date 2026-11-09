@@ -329,24 +329,6 @@ useEffect(() => {
     setStudents(prev => prev.map(s => s.usn === updatedProfile.usn ? updatedProfile : s));
   };
 
-  // HOD Edit Permission Handlers
-  const handleApproveEditRequest = (usn: string, remarks?: string) => {
-    setStudents(prev => prev.map(s => s.usn === usn ? {
-      ...s,
-      isLocked: false,
-      editPermissionStatus: 'approved' as const,
-      editPermissionRemarks: remarks || 'Approved by HOD for profile correction.'
-    } : s));
-  };
-
-  const handleRejectEditRequest = (usn: string, remarks: string) => {
-    setStudents(prev => prev.map(s => s.usn === usn ? {
-      ...s,
-      editPermissionStatus: 'rejected' as const,
-      editPermissionRemarks: remarks || 'Edit request rejected. Consult HOD.'
-    } : s));
-  };
-
   const handleAddDrive = (newDrive: PlacementDrive) => {
     setDrives(prev => [newDrive, ...prev.filter(drive => drive.id !== newDrive.id)]);
     setDriveLoadState('success');
@@ -630,8 +612,6 @@ if (isCheckingSession) {
             driveLoadState={driveLoadState}
             driveLoadError={driveLoadError}
             onRetryDrives={handleRetryDrives}
-            onApproveEditRequest={handleApproveEditRequest}
-            onRejectEditRequest={handleRejectEditRequest}
           />
         )}
 

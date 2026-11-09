@@ -75,6 +75,20 @@ const DRIVE_SELECT = `
   LEFT JOIN users creator ON creator.id = d.scheduled_by
 `;
 
+const STUDENT_BRANCH_CODE_SQL = `
+  COALESCE(
+    NULLIF(s.branch_code, ''),
+    (
+      SELECT b.branch_code
+      FROM branches b
+      WHERE b.branch_code = s.department
+         OR LOWER(TRIM(b.branch_name)) = LOWER(TRIM(s.department))
+      LIMIT 1
+    ),
+    s.department
+  )
+`;
+
 const mapDriveRow = (row: any) => ({
   id: row.id,
   driveCode: row.drive_code,
@@ -1133,12 +1147,29 @@ app.get(
   async (req, res) => {
     try {
       const user = (req as AuthenticatedRequest).authUser!;
+      const requestFields = user.role === 'hod'
+        ? `,
+          edit_request.status AS edit_permission_status,
+          edit_request.reason AS edit_permission_reason,
+          edit_request.requested_at AS edit_permission_requested_at,
+          edit_request.hod_remarks AS edit_permission_remarks`
+        : '';
+      const requestJoin = user.role === 'hod'
+        ? `LEFT JOIN LATERAL (
+             SELECT status, reason, requested_at, hod_remarks
+             FROM profile_edit_requests
+             WHERE profile_edit_requests.usn = s.usn
+             ORDER BY requested_at DESC, id DESC
+             LIMIT 1
+           ) edit_request ON TRUE`
+        : '';
 
       // Build role-specific student access.
       let studentQuery = `
         SELECT
           usn, full_name, first_name, middle_name, last_name,
           pursuing_degree, department, branch_code, section,
+          ${STUDENT_BRANCH_CODE_SQL} AS canonical_branch_code,
           semester, batch_year, mobile_no, gender, date_of_birth,
           year_of_joining, type_of_entry, college_email,
           personal_email, placement_email,
@@ -1150,7 +1181,9 @@ app.get(
           year_back, gap_before_degree_years, gap_in_degree_years,
           registered_for_placement_assistance,
           has_external_certifications, is_placed, is_locked
-        FROM students
+          ${requestFields}
+        FROM students s
+        ${requestJoin}
       `;
 
       const queryParams: any[] = [];
@@ -1162,7 +1195,7 @@ app.get(
           });
         }
 
-        studentQuery += ' WHERE branch_code = $1';
+        studentQuery += ` WHERE ${STUDENT_BRANCH_CODE_SQL} = $1`;
         queryParams.push(user.department);
       } else if (user.role === 'hr') {
         studentQuery += `
@@ -1275,6 +1308,7 @@ app.get(
           lastName: s.last_name || '',
           pursuingDegree: s.pursuing_degree || '',
           department: s.department || s.branch_code || '',
+          branchCode: s.canonical_branch_code || '',
           section: s.section || 'A',
           semester: numberValue(s.semester),
           batchYear: numberValue(s.batch_year),
@@ -1373,7 +1407,22 @@ app.get(
           })),
 
           isPlaced: Boolean(s.is_placed),
-          isLocked: Boolean(s.is_locked)
+          isLocked: Boolean(s.is_locked),
+          ...(user.role === 'hod'
+            ? {
+                editPermissionStatus:
+                  s.edit_permission_status === 'approved' && s.is_locked
+                    ? 'none'
+                    : s.edit_permission_status || 'none',
+                editPermissionReason: s.edit_permission_reason || undefined,
+                editPermissionRequestedAt: s.edit_permission_requested_at
+                  ? s.edit_permission_requested_at instanceof Date
+                    ? s.edit_permission_requested_at.toISOString()
+                    : new Date(s.edit_permission_requested_at).toISOString()
+                  : undefined,
+                editPermissionRemarks: s.edit_permission_remarks || undefined
+              }
+            : {})
         };
       });
 
@@ -1389,6 +1438,351 @@ app.get(
       return res.status(500).json({
         message: 'Unable to retrieve student records.'
       });
+    }
+  }
+);
+
+const mapProfileEditRequest = (row: any) => ({
+  id: row.id,
+  usn: row.usn,
+  studentName: row.student_name,
+  department: row.department,
+  reason: row.reason,
+  requestedAt: row.requested_at instanceof Date
+    ? row.requested_at.toISOString()
+    : new Date(row.requested_at).toISOString(),
+  status: row.status,
+  hodRemarks: row.hod_remarks || undefined,
+  reviewedAt: row.reviewed_at
+    ? row.reviewed_at instanceof Date
+      ? row.reviewed_at.toISOString()
+      : new Date(row.reviewed_at).toISOString()
+    : undefined,
+  section: row.section || '',
+  cgpa: row.cgpa === null || row.cgpa === undefined ? 0 : Number(row.cgpa)
+});
+
+app.get(
+  '/api/student/profile-edit-request',
+  requireAuth,
+  requireRoles('student'),
+  async (req, res) => {
+    try {
+      const user = (req as AuthenticatedRequest).authUser!;
+      const studentResult = await pool.query(
+        `SELECT s.usn, s.is_locked
+         FROM users u
+         JOIN students s ON s.usn = u.usn
+         WHERE u.id = $1 AND u.role = 'student' AND u.is_active IS TRUE
+         LIMIT 1`,
+        [user.id]
+      );
+      const student = studentResult.rows[0];
+
+      if (!student) {
+        return res.status(404).json({ message: 'Student profile not found.' });
+      }
+
+      const requestResult = await pool.query(
+        `SELECT id, usn, student_name, department, reason, requested_at,
+                status, hod_remarks, reviewed_at
+         FROM profile_edit_requests
+         WHERE usn = $1
+         ORDER BY requested_at DESC, id DESC
+         LIMIT 1`,
+        [student.usn]
+      );
+      const latestRequest = requestResult.rows[0];
+      const requestWasConsumed = latestRequest?.status === 'approved' && student.is_locked;
+
+      return res.json({
+        success: true,
+        request: latestRequest && !requestWasConsumed
+          ? {
+              id: latestRequest.id,
+              status: latestRequest.status,
+              reason: latestRequest.reason,
+              requestedAt: latestRequest.requested_at instanceof Date
+                ? latestRequest.requested_at.toISOString()
+                : new Date(latestRequest.requested_at).toISOString(),
+              hodRemarks: latestRequest.hod_remarks || undefined,
+              reviewedAt: latestRequest.reviewed_at
+                ? latestRequest.reviewed_at instanceof Date
+                  ? latestRequest.reviewed_at.toISOString()
+                  : new Date(latestRequest.reviewed_at).toISOString()
+                : undefined
+            }
+          : null,
+        isLocked: Boolean(student.is_locked)
+      });
+    } catch (error) {
+      console.error('Student profile edit request retrieval error:', error);
+      return res.status(500).json({
+        message: 'Unable to retrieve profile edit request status.'
+      });
+    }
+  }
+);
+
+app.post(
+  '/api/student/profile-edit-requests',
+  requireAuth,
+  requireRoles('student'),
+  async (req, res) => {
+    let client: PoolClient;
+    try {
+      client = await pool.connect();
+    } catch (error) {
+      console.error('Student profile edit request database connection failed:', error);
+      return res.status(500).json({
+        message: 'Unable to submit profile edit request.'
+      });
+    }
+    let transactionStarted = false;
+
+    try {
+      const user = (req as AuthenticatedRequest).authUser!;
+      const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim() : '';
+
+      if (!reason || reason.length > 2000) {
+        return res.status(400).json({
+          message: 'Please provide a reason of 1 to 2000 characters.'
+        });
+      }
+
+      await client.query('BEGIN');
+      transactionStarted = true;
+
+      const studentResult = await client.query(
+        `SELECT s.usn, s.full_name, s.department, s.branch_code, s.is_locked,
+                ${STUDENT_BRANCH_CODE_SQL} AS canonical_branch_code
+         FROM users u
+         JOIN students s ON s.usn = u.usn
+         WHERE u.id = $1 AND u.role = 'student' AND u.is_active IS TRUE
+         LIMIT 1
+         FOR UPDATE OF s`,
+        [user.id]
+      );
+      const student = studentResult.rows[0];
+
+      if (!student) {
+        await client.query('ROLLBACK');
+        transactionStarted = false;
+        return res.status(404).json({ message: 'Student profile not found.' });
+      }
+
+      if (!student.is_locked) {
+        await client.query('ROLLBACK');
+        transactionStarted = false;
+        return res.status(409).json({
+          message: 'Your profile is already unlocked for editing.'
+        });
+      }
+
+      const pendingResult = await client.query(
+        `SELECT id, usn, student_name, department, reason, requested_at,
+                status, hod_remarks, reviewed_at
+         FROM profile_edit_requests
+         WHERE usn = $1 AND status = 'pending'
+         ORDER BY requested_at DESC, id DESC
+         LIMIT 1`,
+        [student.usn]
+      );
+      let request = pendingResult.rows[0];
+
+      if (!request) {
+        const department = student.canonical_branch_code || student.department;
+        if (!department) {
+          await client.query('ROLLBACK');
+          transactionStarted = false;
+          return res.status(409).json({
+            message: 'Your student record has no department assigned. Contact the department office.'
+          });
+        }
+
+        const insertResult = await client.query(
+          `INSERT INTO profile_edit_requests
+             (id, usn, student_name, department, reason, status)
+           VALUES ($1, $2, $3, $4, $5, 'pending')
+           RETURNING id, usn, student_name, department, reason, requested_at,
+                     status, hod_remarks, reviewed_at`,
+          [
+            crypto.randomUUID(),
+            student.usn,
+            student.full_name,
+            department,
+            reason
+          ]
+        );
+        request = insertResult.rows[0];
+      }
+
+      await client.query('COMMIT');
+      transactionStarted = false;
+      return res.status(201).json({
+        success: true,
+        request: mapProfileEditRequest(request)
+      });
+    } catch (error) {
+      if (transactionStarted) {
+        await client.query('ROLLBACK');
+      }
+      console.error('Student profile edit request submission error:', error);
+      return res.status(500).json({
+        message: 'Unable to submit profile edit request.'
+      });
+    } finally {
+      client.release();
+    }
+  }
+);
+
+app.get(
+  '/api/hod/profile-edit-requests',
+  requireAuth,
+  requireRoles('hod'),
+  async (req, res) => {
+    try {
+      const user = (req as AuthenticatedRequest).authUser!;
+      if (!user.department) {
+        return res.status(403).json({
+          message: 'Your HOD account has no assigned department.'
+        });
+      }
+
+      const result = await pool.query(
+        `SELECT r.id, r.usn, r.student_name, r.department, r.reason,
+                r.requested_at, r.status, r.hod_remarks, r.reviewed_at,
+                s.full_name, s.section, s.cgpa,
+                ${STUDENT_BRANCH_CODE_SQL} AS actual_department
+         FROM profile_edit_requests r
+         JOIN students s ON s.usn = r.usn
+         WHERE r.status = 'pending'
+           AND ${STUDENT_BRANCH_CODE_SQL} = $1
+         ORDER BY r.requested_at ASC, r.id ASC`,
+        [user.department]
+      );
+
+      return res.json({
+        success: true,
+        requests: result.rows.map((row: any) => mapProfileEditRequest({
+          ...row,
+          student_name: row.full_name,
+          department: row.actual_department
+        }))
+      });
+    } catch (error) {
+      console.error('HOD profile edit request retrieval error:', error);
+      return res.status(500).json({
+        message: 'Unable to retrieve profile edit requests.'
+      });
+    }
+  }
+);
+
+app.patch(
+  '/api/hod/profile-edit-requests/:requestId',
+  requireAuth,
+  requireRoles('hod'),
+  async (req, res) => {
+    let client: PoolClient;
+    try {
+      client = await pool.connect();
+    } catch (error) {
+      console.error('HOD profile edit review database connection failed:', error);
+      return res.status(500).json({
+        message: 'Unable to save the profile edit request decision.'
+      });
+    }
+    let transactionStarted = false;
+
+    try {
+      const user = (req as AuthenticatedRequest).authUser!;
+      const requestId = req.params.requestId?.trim();
+      const { status, remarks } = req.body || {};
+      const normalizedRemarks = typeof remarks === 'string' ? remarks.trim() : '';
+
+      if (!user.department) {
+        return res.status(403).json({
+          message: 'Your HOD account has no assigned department.'
+        });
+      }
+      if (!requestId || requestId.length > 100) {
+        return res.status(400).json({ message: 'Invalid request ID.' });
+      }
+      if (status !== 'approved' && status !== 'rejected') {
+        return res.status(400).json({
+          message: 'Review status must be approved or rejected.'
+        });
+      }
+      if (typeof remarks !== 'undefined' && typeof remarks !== 'string') {
+        return res.status(400).json({ message: 'Invalid review remarks.' });
+      }
+      if (normalizedRemarks.length > 2000) {
+        return res.status(400).json({
+          message: 'Review remarks must be 2000 characters or fewer.'
+        });
+      }
+
+      await client.query('BEGIN');
+      transactionStarted = true;
+      const requestResult = await client.query(
+        `SELECT r.id, r.status, s.usn
+         FROM profile_edit_requests r
+         JOIN students s ON s.usn = r.usn
+         WHERE r.id = $1
+          AND ${STUDENT_BRANCH_CODE_SQL} = $2
+         FOR UPDATE OF r, s`,
+        [requestId, user.department]
+      );
+      const request = requestResult.rows[0];
+
+      if (!request) {
+        await client.query('ROLLBACK');
+        transactionStarted = false;
+        return res.status(404).json({ message: 'Profile edit request not found.' });
+      }
+      if (request.status !== 'pending') {
+        await client.query('ROLLBACK');
+        transactionStarted = false;
+        return res.status(409).json({
+          message: 'This profile edit request has already been reviewed.'
+        });
+      }
+
+      await client.query(
+        `UPDATE profile_edit_requests
+         SET status = $1, hod_remarks = $2, reviewed_at = CURRENT_TIMESTAMP
+         WHERE id = $3`,
+        [status, normalizedRemarks || null, requestId]
+      );
+
+      if (status === 'approved') {
+        await client.query(
+          'UPDATE students SET is_locked = FALSE WHERE usn = $1',
+          [request.usn]
+        );
+      }
+
+      await client.query('COMMIT');
+      transactionStarted = false;
+      return res.json({
+        success: true,
+        status,
+        message: status === 'approved'
+          ? 'Profile edit request approved.'
+          : 'Profile edit request rejected.'
+      });
+    } catch (error) {
+      if (transactionStarted) {
+        await client.query('ROLLBACK');
+      }
+      console.error('HOD profile edit request review error:', error);
+      return res.status(500).json({
+        message: 'Unable to save the profile edit request decision.'
+      });
+    } finally {
+      client.release();
     }
   }
 );
@@ -1496,6 +1890,7 @@ app.get('/api/student/profile', async (req, res) => {
       lastName: s.last_name || '',
       pursuingDegree: s.pursuing_degree || '',
       department: s.department || '',
+      branchCode: s.branch_code || '',
       section: s.section || 'A',
       semester: numberValue(s.semester),
       batchYear: numberValue(s.batch_year),

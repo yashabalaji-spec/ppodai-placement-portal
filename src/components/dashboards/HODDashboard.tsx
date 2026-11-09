@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { UserAccount, StudentProfile, PlacementDrive, DriveLoadState } from '../../types';
+import React, { useEffect, useState } from 'react';
+import { UserAccount, StudentProfile, PlacementDrive, DriveLoadState, ProfileEditRequest } from '../../types';
 import { SectionWiseHODChart } from '../common/Charts';
 import { BRANCHES } from '../../data/mockData';
 import { TeamsPlacementCalendar } from '../common/TeamsPlacementCalendar';
@@ -33,8 +33,6 @@ interface HODDashboardProps {
   driveLoadState: DriveLoadState;
   driveLoadError: string;
   onRetryDrives: () => void;
-  onApproveEditRequest?: (usn: string, remarks?: string) => void;
-  onRejectEditRequest?: (usn: string, remarks: string) => void;
 }
 
 export const HODDashboard: React.FC<HODDashboardProps> = ({
@@ -43,12 +41,10 @@ export const HODDashboard: React.FC<HODDashboardProps> = ({
   drives = [],
   driveLoadState,
   driveLoadError,
-  onRetryDrives,
-  onApproveEditRequest,
-  onRejectEditRequest
+  onRetryDrives
 }) => {
   // STRICT REQUIREMENT: HODs are restricted to their own department and cannot access any other department info
-  const currentBranchCode = user.department || 'CSE';
+  const currentBranchCode = user.department || '';
   const branchMeta = BRANCHES.find(b => b.code === currentBranchCode) || BRANCHES[0];
 
   const [activeTab, setActiveTab] = useState<'roster' | 'requests' | 'analytics' | 'calendar'>('roster');
@@ -56,9 +52,56 @@ export const HODDashboard: React.FC<HODDashboardProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [expandedStudentUsn, setExpandedStudentUsn] = useState<string | null>(null);
   const [rejectRemarksInput, setRejectRemarksInput] = useState<{ [usn: string]: string }>({});
+  const [pendingRequests, setPendingRequests] = useState<ProfileEditRequest[]>([]);
+  const [requestLoadState, setRequestLoadState] = useState<'loading' | 'success' | 'error'>('loading');
+  const [requestLoadError, setRequestLoadError] = useState('');
+  const [reviewingRequestId, setReviewingRequestId] = useState<string | null>(null);
+  const [reviewError, setReviewError] = useState('');
+  const [requestRefreshVersion, setRequestRefreshVersion] = useState(0);
+
+  useEffect(() => {
+    if (activeTab !== 'requests') return;
+
+    let active = true;
+    const loadRequests = async () => {
+      try {
+        const response = await fetch('/api/hod/profile-edit-requests', {
+          credentials: 'same-origin'
+        });
+        const data = await response.json() as {
+          message?: string;
+          requests?: ProfileEditRequest[];
+        };
+        if (!response.ok || !Array.isArray(data.requests)) {
+          throw new Error(data.message || 'Unable to load profile edit requests.');
+        }
+        if (!active) return;
+        setPendingRequests(data.requests);
+        setRequestLoadState('success');
+        setRequestLoadError('');
+      } catch (error) {
+        if (!active) return;
+        setRequestLoadState('error');
+        setRequestLoadError(
+          error instanceof Error ? error.message : 'Unable to load profile edit requests.'
+        );
+      }
+    };
+
+    void loadRequests();
+    const refreshTimer = window.setInterval(() => void loadRequests(), 30000);
+    return () => {
+      active = false;
+      window.clearInterval(refreshTimer);
+    };
+  }, [activeTab, user.department, requestRefreshVersion]);
 
   // Filter students belonging ONLY to this HOD's branch
-  const branchStudents = students.filter(s => s.department === currentBranchCode);
+  const branchStudents = students.filter(s =>
+    s.branchCode
+      ? s.branchCode === currentBranchCode
+      : s.department === currentBranchCode
+  );
   
   const filteredStudents = branchStudents.filter(s => {
     const matchesSection = selectedSection === 'ALL' || s.section === selectedSection;
@@ -68,7 +111,39 @@ export const HODDashboard: React.FC<HODDashboardProps> = ({
   });
 
   // Students in this branch requesting profile edit permission
-  const pendingRequests = branchStudents.filter(s => s.editPermissionStatus === 'pending');
+  const handleReviewRequest = async (
+    request: ProfileEditRequest,
+    status: 'approved' | 'rejected'
+  ) => {
+    setReviewingRequestId(request.id);
+    setReviewError('');
+    try {
+      const response = await fetch(`/api/hod/profile-edit-requests/${encodeURIComponent(request.id)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({
+          status,
+          remarks: rejectRemarksInput[request.id] || (
+            status === 'approved'
+              ? 'Approved by HOD for profile update.'
+              : 'Request rejected. Contact HOD office.'
+          )
+        })
+      });
+      const data = await response.json() as { message?: string; success?: boolean };
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || 'Unable to review this request.');
+      }
+      setPendingRequests(current => current.filter(item => item.id !== request.id));
+    } catch (error) {
+      setReviewError(
+        error instanceof Error ? error.message : 'Unable to review this request.'
+      );
+    } finally {
+      setReviewingRequestId(null);
+    }
+  };
 
   const totalPlaced = branchStudents.filter(s => s.isPlaced).length;
   const placementPercent = branchStudents.length > 0 ? ((totalPlaced / branchStudents.length) * 100).toFixed(1) : '95.5';
@@ -207,7 +282,28 @@ export const HODDashboard: React.FC<HODDashboardProps> = ({
             </span>
           </div>
 
-          {pendingRequests.length === 0 ? (
+          {reviewError && (
+            <div role="alert" className="p-3 rounded-lg border border-red-200 bg-red-50 text-sm text-red-800">
+              {reviewError}
+            </div>
+          )}
+
+          {requestLoadState === 'loading' ? (
+            <div role="status" className="p-8 text-center text-sm text-slate-600">
+              Loading profile edit requests...
+            </div>
+          ) : requestLoadState === 'error' ? (
+            <div role="alert" className="p-4 rounded-lg border border-red-200 bg-red-50 text-sm text-red-800">
+              <p>{requestLoadError}</p>
+              <button
+                type="button"
+                onClick={() => setRequestRefreshVersion(version => version + 1)}
+                className="mt-2 px-3 py-1 rounded bg-red-800 text-white font-semibold"
+              >
+                Retry
+              </button>
+            </div>
+          ) : pendingRequests.length === 0 ? (
             <div className="p-8 text-center bg-slate-50 border border-slate-200 rounded-xl">
               <CheckCircle2 className="w-10 h-10 text-emerald-500 mx-auto mb-2" />
               <h4 className="text-sm font-bold text-slate-800">No Pending Unlock Requests</h4>
@@ -219,25 +315,25 @@ export const HODDashboard: React.FC<HODDashboardProps> = ({
             <div className="space-y-3">
               {pendingRequests.map(reqStudent => (
                 <div 
-                  key={reqStudent.usn}
+                  key={reqStudent.id}
                   className="p-4 rounded-xl border border-amber-300 bg-amber-50/40 space-y-3 shadow-2xs"
                 >
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                     <div className="flex items-center gap-3">
                       <div className="w-9 h-9 rounded-full bg-amber-600 text-white font-bold text-xs flex items-center justify-center shrink-0">
-                        {reqStudent.fullName.slice(0, 2).toUpperCase()}
+                        {reqStudent.studentName.slice(0, 2).toUpperCase()}
                       </div>
                       <div>
                         <div className="flex items-center gap-2">
-                          <span className="font-bold text-sm text-slate-900">{reqStudent.fullName}</span>
+                          <span className="font-bold text-sm text-slate-900">{reqStudent.studentName}</span>
                           <span className="font-mono text-xs font-semibold text-slate-600">({reqStudent.usn})</span>
                           <span className="text-[10px] font-semibold bg-white border border-amber-200 px-2 py-0.5 rounded text-amber-800">
-                            Sec {reqStudent.section} · CGPA {reqStudent.cgpa.toFixed(2)}
+                          Sec {reqStudent.section || '—'} · CGPA {(reqStudent.cgpa || 0).toFixed(2)}
                           </span>
                         </div>
                         <div className="text-[11px] text-slate-500 mt-0.5 flex items-center gap-2">
                           <Clock className="w-3 h-3 text-slate-400" />
-                          <span>Requested at: {reqStudent.editPermissionRequestedAt || 'Recent'}</span>
+                          <span>Requested at: {new Date(reqStudent.requestedAt).toLocaleString('en-IN')}</span>
                         </div>
                       </div>
                     </div>
@@ -245,7 +341,8 @@ export const HODDashboard: React.FC<HODDashboardProps> = ({
                     <div className="flex items-center gap-2 shrink-0">
                       <button
                         type="button"
-                        onClick={() => onApproveEditRequest?.(reqStudent.usn, 'Approved by HOD for profile update.')}
+                        onClick={() => void handleReviewRequest(reqStudent, 'approved')}
+                        disabled={reviewingRequestId === reqStudent.id}
                         className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors"
                       >
                         <CheckCircle2 className="w-3.5 h-3.5" />
@@ -254,10 +351,8 @@ export const HODDashboard: React.FC<HODDashboardProps> = ({
                       
                       <button
                         type="button"
-                        onClick={() => {
-                          const remarks = rejectRemarksInput[reqStudent.usn] || 'Request rejected. Contact HOD office.';
-                          onRejectEditRequest?.(reqStudent.usn, remarks);
-                        }}
+                        onClick={() => void handleReviewRequest(reqStudent, 'rejected')}
+                        disabled={reviewingRequestId === reqStudent.id}
                         className="px-3 py-1.5 rounded-lg bg-white border border-rose-300 text-rose-700 hover:bg-rose-50 text-xs font-bold flex items-center gap-1 transition-colors"
                       >
                         <XCircle className="w-3.5 h-3.5" />
@@ -270,7 +365,7 @@ export const HODDashboard: React.FC<HODDashboardProps> = ({
                   <div className="p-3 bg-white border border-amber-200 rounded-lg text-xs">
                     <span className="font-semibold text-slate-800 block mb-1">Student's Stated Reason:</span>
                     <p className="text-slate-600 italic">
-                      "{reqStudent.editPermissionReason || 'Correction of academic semester grades and adding external certification credentials.'}"
+                      "{reqStudent.reason}"
                     </p>
                   </div>
 
@@ -280,8 +375,8 @@ export const HODDashboard: React.FC<HODDashboardProps> = ({
                     <input
                       type="text"
                       placeholder="Add remarks for student..."
-                      value={rejectRemarksInput[reqStudent.usn] || ''}
-                      onChange={(e) => setRejectRemarksInput({ ...rejectRemarksInput, [reqStudent.usn]: e.target.value })}
+                      value={rejectRemarksInput[reqStudent.id] || ''}
+                      onChange={(e) => setRejectRemarksInput({ ...rejectRemarksInput, [reqStudent.id]: e.target.value })}
                       className="flex-1 px-2.5 py-1 text-xs border border-slate-200 rounded-md bg-white text-slate-800"
                     />
                   </div>
