@@ -4,13 +4,20 @@ import { INITIAL_USERS, INITIAL_STUDENTS } from '../data/mockData';
 const USERS_STORAGE_KEY = 'gat_users';
 const STUDENTS_STORAGE_KEY = 'gat_students';
 
+function withoutPassword<T extends { password?: string }>(record: T): Omit<T, 'password'> {
+  const { password: _password, ...safeRecord } = record;
+  return safeRecord;
+}
+
 export function getStoredUsers(): UserAccount[] {
   try {
     const raw = localStorage.getItem(USERS_STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed;
+        const safeUsers = (parsed as UserAccount[]).map(user => withoutPassword(user));
+        localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(safeUsers));
+        return safeUsers;
       }
     }
   } catch (e) {
@@ -21,7 +28,10 @@ export function getStoredUsers(): UserAccount[] {
 
 export function saveUsers(users: UserAccount[]): void {
   try {
-    localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(users));
+    localStorage.setItem(
+      USERS_STORAGE_KEY,
+      JSON.stringify(users.map(user => withoutPassword(user)))
+    );
   } catch (e) {
     console.error('Failed to save users to localStorage', e);
   }
@@ -33,7 +43,9 @@ export function getStoredStudentsList(): StudentProfile[] {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed;
+        const safeStudents = (parsed as StudentProfile[]).map(student => withoutPassword(student));
+        localStorage.setItem(STUDENTS_STORAGE_KEY, JSON.stringify(safeStudents));
+        return safeStudents;
       }
     }
   } catch (e) {
@@ -44,9 +56,41 @@ export function getStoredStudentsList(): StudentProfile[] {
 
 export function saveStudentsList(students: StudentProfile[]): void {
   try {
-    localStorage.setItem(STUDENTS_STORAGE_KEY, JSON.stringify(students));
+    localStorage.setItem(
+      STUDENTS_STORAGE_KEY,
+      JSON.stringify(students.map(student => withoutPassword(student)))
+    );
   } catch (e) {
     console.error('Failed to save students to localStorage', e);
+  }
+}
+
+export function removeStoredCredentials(): void {
+  try {
+    for (const key of [USERS_STORAGE_KEY, STUDENTS_STORAGE_KEY]) {
+      const raw = localStorage.getItem(key);
+      if (!raw) continue;
+
+      const parsed: unknown = JSON.parse(raw);
+      if (!Array.isArray(parsed)) {
+        localStorage.removeItem(key);
+        continue;
+      }
+
+      localStorage.setItem(
+        key,
+        JSON.stringify(parsed.map(record => {
+          if (!record || typeof record !== 'object' || Array.isArray(record)) {
+            return record;
+          }
+          const safeRecord: Record<string, unknown> = { ...record };
+          delete safeRecord.password;
+          return safeRecord;
+        }))
+      );
+    }
+  } catch (error) {
+    console.error('Unable to remove legacy credentials from local storage.', error);
   }
 }
 

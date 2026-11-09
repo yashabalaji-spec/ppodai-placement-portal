@@ -18,12 +18,57 @@
   --palette-mint: #E4F2EA;
 }
 
+html,
+body,
+#root {
+  width: 100%;
+  min-width: 320px;
+  min-height: 100%;
+}
+
 body {
   background-color: #F8FAF9;
   color: #0C2C47;
   font-feature-settings: "cv02", "cv03", "cv04", "cv11";
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  overflow-x: clip;
+}
+
+button,
+input,
+select,
+textarea {
+  min-width: 0;
+  max-width: 100%;
+}
+
+img,
+video,
+canvas {
+  max-width: 100%;
+}
+
+@media (max-width: 639px) {
+  button,
+  input,
+  select {
+    min-height: 44px;
+  }
+
+  .fixed.inset-0.z-50 {
+    align-items: flex-start;
+    overflow-y: auto;
+    padding-top: max(0.75rem, env(safe-area-inset-top));
+    padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+  }
+
+  .fixed.inset-0.z-50 > :first-child {
+    max-height: min(90dvh, calc(100dvh - 1.5rem));
+    margin-top: auto;
+    margin-bottom: auto;
+    overflow-y: auto;
+  }
 }
 
 /* Smooth horizontal scroll without scrollbar for tabs */
@@ -33,4 +78,16 @@ body {
 .no-scrollbar {
   -ms-overflow-style: none;
   scrollbar-width: none;
+}
+
+@media (max-width: 640px) {
+  .no-scrollbar > button {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+
+  main h1,
+  main h2 {
+    overflow-wrap: anywhere;
+  }
 }

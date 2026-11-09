@@ -517,7 +517,8 @@ export const TeamsPlacementCalendar: React.FC<TeamsPlacementCalendarProps> = ({
       {/* VIEW MODE 1: MONTH GRID (TEAMS STYLE) */}
       {/* ========================================================================= */}
       {viewMode === 'month' && (
-        <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-xs">
+        <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto shadow-xs">
+          <div className="min-w-[560px]">
           
           {/* Weekday headers */}
           <div className="grid grid-cols-7 border-b border-slate-200 bg-slate-50 text-center text-xs font-bold text-slate-600 py-2.5">
@@ -632,7 +633,7 @@ export const TeamsPlacementCalendar: React.FC<TeamsPlacementCalendarProps> = ({
               );
             })}
           </div>
-
+          </div>
         </div>
       )}
 
@@ -747,8 +748,8 @@ export const TeamsPlacementCalendar: React.FC<TeamsPlacementCalendarProps> = ({
       {/* MODAL 1: VIEW COMPANY DETAILS, JD & TEAMS MEETING MODAL */}
       {/* ========================================================================= */}
       {selectedDriveModal && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-3xl w-full max-h-[90vh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden">
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl max-w-3xl w-full max-h-[90dvh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden my-auto">
             
             {/* Modal Header */}
             <div className="p-6 bg-gradient-to-r from-[#3b3a6e] to-indigo-950 text-white flex items-center justify-between">
@@ -939,8 +940,8 @@ export const TeamsPlacementCalendar: React.FC<TeamsPlacementCalendarProps> = ({
       {/* MODAL 2: PCC SCHEDULE MEETING & PUBLISH JD MODAL */}
       {/* ========================================================================= */}
       {showScheduleModal && canSchedule && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden">
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90dvh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden my-auto">
             
             {/* Modal Header */}
             <div className="p-5 bg-[#3b3a6e] text-white flex items-center justify-between">
@@ -1088,7 +1089,7 @@ export const TeamsPlacementCalendar: React.FC<TeamsPlacementCalendarProps> = ({
                 <p className="text-[11px] text-slate-500 mb-2">
                   Select which branches are eligible to view this meeting on their calendar and apply:
                 </p>
-                <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 p-3 bg-slate-50 rounded-xl border border-slate-200">
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 p-3 bg-slate-50 rounded-xl border border-slate-200">
                   {BRANCHES.map(branch => {
                     const isChecked = targetBranches.includes(branch.code);
                     return (

@@ -187,7 +187,7 @@ export const PCCEmailDispatcherConsole: React.FC<PCCEmailDispatcherConsoleProps>
             <div className="space-y-3 p-3 bg-amber-50/50 rounded-xl border border-amber-200/80 text-xs">
               <div>
                 <label className="text-slate-700 font-semibold block mb-1">Select Hours Remaining Timer:</label>
-                <div className="grid grid-cols-4 gap-2">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   {[24, 18, 6, 2].map(hours => (
                     <button
                       key={hours}

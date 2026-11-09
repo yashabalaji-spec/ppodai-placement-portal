@@ -22,6 +22,9 @@ interface DeanDashboardProps {
   user: UserAccount;
   students: StudentProfile[];
   companies: Company[];
+  companyLoadState: DriveLoadState;
+  companyLoadError: string;
+  onRetryCompanies: () => void;
   drives: PlacementDrive[];
   driveLoadState: DriveLoadState;
   driveLoadError: string;
@@ -34,6 +37,9 @@ export const DeanDashboard: React.FC<DeanDashboardProps> = ({
   user,
   students,
   companies,
+  companyLoadState,
+  companyLoadError,
+  onRetryCompanies,
   drives,
   driveLoadState,
   driveLoadError,
@@ -229,9 +235,9 @@ export const DeanDashboard: React.FC<DeanDashboardProps> = ({
       {/* TAB CONTENT: COMPANIES */}
       {activeTab === 'companies' && (
         <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
-          <div className="p-4 border-b border-slate-200 flex items-center justify-between">
-            <h3 className="text-sm font-bold text-slate-900">Visiting Corporate Recruiters (Tier 1, 2 & Core)</h3>
-            <span className="text-xs text-slate-500 font-mono">{companies.length} Registered Recruiters</span>
+          <div className="p-4 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+            <h3 className="min-w-0 break-words text-sm font-bold text-slate-900">Visiting Corporate Recruiters (Tier 1, 2 & Core)</h3>
+            <span className="shrink-0 text-xs text-slate-500 font-mono">{companies.length} Registered Recruiters</span>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
@@ -245,20 +251,52 @@ export const DeanDashboard: React.FC<DeanDashboardProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {companies.map(c => (
+                {companyLoadState === 'loading' && (
+                  <tr>
+                    <td colSpan={5} className="px-4 py-8 text-center text-slate-500">
+                      Loading company information...
+                    </td>
+                  </tr>
+                )}
+                {companyLoadState === 'error' && (
+                  <tr>
+                    <td colSpan={5} className="px-4 py-6 text-center text-rose-700">
+                      <p role="alert">{companyLoadError}</p>
+                      <button
+                        type="button"
+                        onClick={onRetryCompanies}
+                        className="mt-2 min-h-11 rounded-lg border border-rose-300 px-4 font-semibold hover:bg-rose-50"
+                      >
+                        Retry
+                      </button>
+                    </td>
+                  </tr>
+                )}
+                {companyLoadState === 'success' && companies.length === 0 && (
+                  <tr>
+                    <td colSpan={5} className="px-4 py-8 text-center text-slate-500">
+                      No companies are available.
+                    </td>
+                  </tr>
+                )}
+                {companyLoadState === 'success' && companies.map(c => (
                   <tr key={c.id} className="hover:bg-slate-50">
-                    <td className="py-3 px-4 font-bold text-slate-900">{c.name}</td>
-                    <td className="py-3 px-4 text-slate-600">{c.industry}</td>
+                    <td className="py-3 px-4 font-bold text-slate-900 break-words">{c.name}</td>
+                    <td className="py-3 px-4 text-slate-600 break-words">{c.industry || '—'}</td>
                     <td className="py-3 px-4">
                       <span className={`px-2 py-0.5 rounded text-[11px] font-medium ${
                         c.tier === 'Tier 1' ? 'bg-indigo-50 text-indigo-700 font-semibold' : 'bg-slate-100 text-slate-700'
                       }`}>
-                        {c.tier}
+                        {c.tier || '—'}
                       </span>
                     </td>
-                    <td className="py-3 px-4 text-slate-700">{c.jobProfiles.join(', ')}</td>
-                    <td className="py-3 px-4 text-slate-600 font-mono text-[11px]">
-                      {c.contactPerson} · {c.contactEmail}
+                    <td className="py-3 px-4 text-slate-700">
+                      {Array.isArray(c.jobProfiles) && c.jobProfiles.length > 0
+                        ? c.jobProfiles.join(', ')
+                        : '—'}
+                    </td>
+                    <td className="py-3 px-4 text-slate-600 font-mono text-[11px] break-all">
+                      {[c.contactPerson, c.contactEmail].filter(Boolean).join(' · ') || '—'}
                     </td>
                   </tr>
                 ))}

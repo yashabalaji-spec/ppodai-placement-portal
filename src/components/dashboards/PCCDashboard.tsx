@@ -159,13 +159,13 @@ const toggleNewBranch = (branchCode: string) => {
       
       {/* PCC Header */}
       <div className="bg-[#0C2C47] rounded-2xl p-5 sm:p-6 text-white shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
+        <div className="min-w-0">
           <div className="flex items-center gap-2 text-xs font-semibold tracking-wider uppercase text-[#E2A54D]">
             <span>Placement Coordinators</span>
             <span>·</span>
             <span>PCC</span>
           </div>
-          <h1 className="text-xl sm:text-2xl font-bold mt-1 text-white tracking-tight">
+          <h1 className="break-words text-xl sm:text-2xl font-bold mt-1 text-white tracking-tight">
             Drive Scheduling & Alerts
           </h1>
           <p className="text-xs text-[#E4F2EA] mt-1 max-w-2xl">
@@ -472,7 +472,7 @@ const toggleNewBranch = (branchCode: string) => {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="font-semibold text-slate-700 block mb-1">CTC Package (LPA)</label>
                   <input 
@@ -496,7 +496,7 @@ const toggleNewBranch = (branchCode: string) => {
                 </div>
               </div>
 
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <label className="font-semibold text-slate-700 block mb-1">Start Time (IST)</label>
                   <input
@@ -557,7 +557,7 @@ const toggleNewBranch = (branchCode: string) => {
 
               <fieldset>
                 <legend className="font-semibold text-slate-700 mb-2">Target Branches</legend>
-                <div className="grid grid-cols-4 gap-2">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   {BRANCHES.map(branch => (
                     <label key={branch.code} className="flex items-center gap-1.5 rounded border border-slate-200 px-2 py-1.5">
                       <input

@@ -1,4 +1,5 @@
 import { PlacementDrive } from '../types';
+import { apiFetch } from './apiFetch';
 
 export interface CreatePlacementDriveInput {
   companyId: string;
@@ -96,7 +97,7 @@ export async function createPlacementDrive(
   input: CreatePlacementDriveInput,
   idempotencyKey: string
 ): Promise<PlacementDrive> {
-  const response = await fetch('/api/drives', {
+  const response = await apiFetch('/api/drives', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

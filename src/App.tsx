@@ -29,6 +29,8 @@ import { StudentPortal } from './components/dashboards/StudentPortal';
 import { HRPortal } from './components/dashboards/HRPortal';
 import { AdminDashboard } from './components/dashboards/AdminDashboard';
 import { LoginPage } from './components/auth/LoginPage';
+import { apiFetch } from './services/apiFetch';
+import { removeStoredCredentials } from './services/authService';
 import { 
   Building2, 
   Layers, 
@@ -45,6 +47,7 @@ export default function App() {
   // Authentication session state
 const [isAuthenticated, setIsAuthenticated] = useState(false);
 const [isCheckingSession, setIsCheckingSession] = useState(true);
+const [logoutWarning, setLogoutWarning] = useState('');
 
 // Placeholder user until the backend verifies the session
 const [currentUser, setCurrentUser] = useState<UserAccount>(INITIAL_USERS[7]);
@@ -64,6 +67,9 @@ const [driveRefreshVersion, setDriveRefreshVersion] = useState(0);
 
   // Companies & Drives
   const [companies, setCompanies] = useState<Company[]>([]);
+  const [companyLoadState, setCompanyLoadState] = useState<DriveLoadState>('loading');
+  const [companyLoadError, setCompanyLoadError] = useState('');
+  const [companyRefreshVersion, setCompanyRefreshVersion] = useState(0);
   const [drives, setDrives] = useState<PlacementDrive[]>([]);
 
   // Modals
@@ -81,7 +87,20 @@ const [driveRefreshVersion, setDriveRefreshVersion] = useState(0);
   });
 // Restore authenticated session from the backend
 useEffect(() => {
-  const checkSession = async () => {
+  removeStoredCredentials();
+  let active = true;
+
+  const clearSession = () => {
+    setIsAuthenticated(false);
+    setCurrentUser(INITIAL_USERS[7]);
+    setAuthenticatedUser(null);
+    setIsRolePreviewMode(false);
+    setRoleSwitcherOpen(false);
+    setAccessDeniedData({ isOpen: false, reason: '' });
+  };
+
+  const checkSession = async (restoredFromHistory = false) => {
+    if (restoredFromHistory) setIsCheckingSession(true);
     try {
       const response = await fetch('/api/auth/me', {
         method: 'GET',
@@ -90,18 +109,36 @@ useEffect(() => {
 
       if (response.ok) {
         const data = await response.json();
-        setCurrentUser(data.user);
-        setAuthenticatedUser(data.user);
-        setIsAuthenticated(true);
+        if (!active) return;
+        if (!restoredFromHistory) {
+          setCurrentUser(data.user);
+          setAuthenticatedUser(data.user);
+          setIsAuthenticated(true);
+        }
+      } else if (restoredFromHistory) {
+        clearSession();
       }
     } catch (error) {
       console.error('Session check failed:', error);
+      if (restoredFromHistory) clearSession();
     } finally {
-      setIsCheckingSession(false);
+      if (active) setIsCheckingSession(false);
     }
   };
 
-  checkSession();
+  const onSessionExpired = () => clearSession();
+  const onPageShow = (event: PageTransitionEvent) => {
+    if (event.persisted) void checkSession(true);
+  };
+
+  window.addEventListener('ppodai:session-expired', onSessionExpired);
+  window.addEventListener('pageshow', onPageShow);
+  void checkSession();
+  return () => {
+    active = false;
+    window.removeEventListener('ppodai:session-expired', onSessionExpired);
+    window.removeEventListener('pageshow', onPageShow);
+  };
 }, []);
 
   // Load the logged-in student's profile from PostgreSQL.
@@ -123,7 +160,7 @@ useEffect(() => {
 
     const loadStudentProfile = async () => {
       try {
-        const response = await fetch('/api/student/profile', {
+        const response = await apiFetch('/api/student/profile', {
           method: 'GET',
           credentials: 'same-origin'
         });
@@ -173,7 +210,7 @@ useEffect(() => {
 
   const loadStudents = async () => {
     try {
-      const response = await fetch('/api/students', {
+      const response = await apiFetch('/api/students', {
         method: 'GET',
         credentials: 'same-origin'
       });
@@ -198,13 +235,22 @@ useEffect(() => {
 }, [isAuthenticated, currentUser.role, currentUser.department]);
 // Load companies from PostgreSQL after authentication.
 useEffect(() => {
+  let isActive = true;
+
   if (!isAuthenticated || currentUser.role === 'student') {
+    setCompanies([]);
+    setCompanyLoadState('success');
+    setCompanyLoadError('');
     return;
   }
 
+  setCompanies([]);
+  setCompanyLoadState('loading');
+  setCompanyLoadError('');
+
   const loadCompanies = async () => {
     try {
-      const response = await fetch('/api/companies', {
+      const response = await apiFetch('/api/companies', {
         method: 'GET',
         credentials: 'same-origin'
       });
@@ -212,22 +258,31 @@ useEffect(() => {
       const data = await response.json();
 
       if (!response.ok) {
-        console.error('Company loading failed:', data.message);
-        return;
+        throw new Error(data.message || 'Unable to load companies.');
       }
 
-      setCompanies(data.companies as Company[]);
+      if (!Array.isArray(data.companies)) {
+        throw new Error('The server returned an invalid company list.');
+      }
 
-      console.log(
-        `Loaded ${data.count} companies from PostgreSQL.`
-      );
+      if (!isActive) return;
+      setCompanies(data.companies as Company[]);
+      setCompanyLoadState('success');
     } catch (error) {
+      if (!isActive) return;
       console.error('Company loading error:', error);
+      setCompanyLoadError(
+        error instanceof Error ? error.message : 'Unable to load companies.'
+      );
+      setCompanyLoadState('error');
     }
   };
 
-  loadCompanies();
-}, [isAuthenticated, currentUser.role]);
+  void loadCompanies();
+  return () => {
+    isActive = false;
+  };
+}, [isAuthenticated, currentUser.role, companyRefreshVersion]);
 
   // Load placement drives from PostgreSQL after authentication.
   useEffect(() => {
@@ -252,7 +307,7 @@ useEffect(() => {
 
     const loadDrives = async () => {
       try {
-        const response = await fetch('/api/drives', {
+        const response = await apiFetch('/api/drives', {
           method: 'GET',
           credentials: 'same-origin'
         });
@@ -298,6 +353,7 @@ useEffect(() => {
   ]);
 
   const handleLoginSuccess = (user: UserAccount) => {
+    setLogoutWarning('');
     if (user.role === 'student') {
       setStudents([]);
       setStudentProfileLoadState(null);
@@ -309,19 +365,27 @@ useEffect(() => {
   };
 
   const handleLogout = async () => {
+  setIsAuthenticated(false);
+  setCurrentUser(INITIAL_USERS[7]);
+  setAuthenticatedUser(null);
+  setIsRolePreviewMode(false);
+  setAccessDeniedData({ isOpen: false, reason: '' });
+  setLogoutWarning('');
+
   try {
-    await fetch('/api/auth/logout', {
+    const response = await fetch('/api/auth/logout', {
       method: 'POST',
       credentials: 'same-origin'
     });
+    if (!response.ok) {
+      const result = await response.json().catch(() => null) as { message?: string } | null;
+      setLogoutWarning(
+        result?.message || 'The server could not confirm logout. Retry logout before leaving this device.'
+      );
+    }
   } catch (error) {
     console.error('Logout request failed:', error);
-  } finally {
-    setIsAuthenticated(false);
-    setCurrentUser(INITIAL_USERS[7]);
-    setAuthenticatedUser(null);
-    setIsRolePreviewMode(false);
-    setAccessDeniedData({ isOpen: false, reason: '' });
+    setLogoutWarning('The server could not confirm logout. Check your connection and retry logout before leaving this device.');
   }
 };
 
@@ -337,6 +401,10 @@ useEffect(() => {
 
   const handleRetryDrives = () => {
     setDriveRefreshVersion(version => version + 1);
+  };
+
+  const handleRetryCompanies = () => {
+    setCompanyRefreshVersion(version => version + 1);
   };
 
   const handleUpdateDrive = (updatedDrive: PlacementDrive) => {
@@ -387,7 +455,7 @@ useEffect(() => {
       throw new Error(access.reason || 'This role preview is not permitted.');
     }
 
-    const response = await fetch('/api/auth/role-preview', {
+    const response = await apiFetch('/api/auth/role-preview', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'same-origin',
@@ -458,8 +526,14 @@ if (isCheckingSession) {
 }
   // If not authenticated, show the special ID & password Login Page!
   if (!isAuthenticated) {
-    return <LoginPage onLoginSuccess={handleLoginSuccess} />;
-  }
+      return (
+        <LoginPage
+          onLoginSuccess={handleLoginSuccess}
+          notice={logoutWarning}
+          onRetryLogout={handleLogout}
+        />
+      );
+    }
 
   return (
     <div className="min-h-screen bg-[#F8FAF9] text-[#0C2C47] flex flex-col font-sans">
@@ -595,6 +669,9 @@ if (isCheckingSession) {
             user={currentUser}
             students={students}
             companies={companies}
+            companyLoadState={companyLoadState}
+            companyLoadError={companyLoadError}
+            onRetryCompanies={handleRetryCompanies}
             drives={drives}
             driveLoadState={driveLoadState}
             driveLoadError={driveLoadError}

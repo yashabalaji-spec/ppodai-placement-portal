@@ -1,10 +1,20 @@
 import React, { useState,useEffect } from 'react';
-import { StudentProfile, StudentSkill, StudentInternship, StudentProject, StudentRnD, PlacementDrive, DriveLoadState } from '../../types';
+import {
+  StudentProfile,
+  StudentSkill,
+  StudentInternship,
+  StudentProject,
+  StudentRnD,
+  PlacementDrive,
+  DriveLoadState,
+  PortalNotice
+} from '../../types';
 import { generateStudentResumePDF } from '../../services/pdfService';
 import { StudentDriveSchedule } from './StudentDriveSchedule';
 import { ResumeManager } from './ResumeManager';
 import { StudentPlacementMailbox } from '../common/StudentPlacementMailbox';
 import { getStoredEmails } from '../../services/emailService';
+import { apiFetch } from '../../services/apiFetch';
 import { 
   User, 
   GraduationCap, 
@@ -31,7 +41,8 @@ import {
   X,
   ShieldAlert,
   ArrowRight,
-  Bell
+  Bell,
+  RefreshCw
 } from 'lucide-react';
 
 interface StudentPortalProps {
@@ -56,8 +67,64 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
    useEffect(() => {
      setProfile(student);
    }, [student]);
-  const [activeTab, setActiveTab] = useState<'schedule' | 'emails' | 'personal' | 'academic' | 'skills' | 'rnd' | 'resumes' | 'offers'>('schedule');
+  const [activeTab, setActiveTab] = useState<'schedule' | 'emails' | 'notices' | 'personal' | 'academic' | 'skills' | 'rnd' | 'resumes' | 'offers'>('schedule');
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [notices, setNotices] = useState<PortalNotice[]>([]);
+  const [noticeLoadState, setNoticeLoadState] = useState<DriveLoadState>('loading');
+  const [noticeLoadError, setNoticeLoadError] = useState('');
+  const [noticeRefreshVersion, setNoticeRefreshVersion] = useState(0);
+
+  useEffect(() => {
+    let active = true;
+    let requestInFlight = false;
+
+    const loadNotices = async (showLoading = true) => {
+      if (requestInFlight) return;
+      requestInFlight = true;
+      if (showLoading) {
+        setNoticeLoadState('loading');
+        setNoticeLoadError('');
+      }
+
+      try {
+        const response = await apiFetch('/api/student/notices', {
+          method: 'GET',
+          credentials: 'same-origin'
+        });
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.message || 'Unable to load department notices.');
+        }
+        if (!Array.isArray(data.notices)) {
+          throw new Error('The server returned an invalid notice list.');
+        }
+        if (!active) return;
+
+        setNotices(data.notices as PortalNotice[]);
+        setNoticeLoadState('success');
+      } catch (error) {
+        if (!active) return;
+        setNoticeLoadError(
+          error instanceof Error ? error.message : 'Unable to load department notices.'
+        );
+        setNoticeLoadState('error');
+      } finally {
+        requestInFlight = false;
+      }
+    };
+
+    const refreshOnFocus = () => void loadNotices(false);
+    void loadNotices();
+    const refreshInterval = window.setInterval(() => void loadNotices(false), 30_000);
+    window.addEventListener('focus', refreshOnFocus);
+
+    return () => {
+      active = false;
+      window.clearInterval(refreshInterval);
+      window.removeEventListener('focus', refreshOnFocus);
+    };
+  }, [student.usn, noticeRefreshVersion]);
 
   // Yes/No radio state from user's student_profile.html
   const [targetEmailId, setTargetEmailId] = useState<string | null>(null);
@@ -100,7 +167,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
     let active = true;
     const refreshRequestStatus = async () => {
       try {
-        const response = await fetch('/api/student/profile-edit-request', {
+        const response = await apiFetch('/api/student/profile-edit-request', {
           credentials: 'same-origin'
         });
         const data = await response.json() as {
@@ -158,7 +225,7 @@ const handleSave = async (e: React.FormEvent) => {
       editPermissionRemarks: undefined
     };
 
-    const response = await fetch('/api/student/profile', {
+    const response = await apiFetch('/api/student/profile', {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json'
@@ -199,7 +266,7 @@ const handleSave = async (e: React.FormEvent) => {
     setRequestSubmitting(true);
     setRequestError('');
     try {
-      const response = await fetch('/api/student/profile-edit-requests', {
+      const response = await apiFetch('/api/student/profile-edit-requests', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'same-origin',
@@ -278,13 +345,13 @@ const handleSave = async (e: React.FormEvent) => {
       
       {/* Student Welcome Banner */}
       <div className="bg-[#0C2C47] rounded-2xl p-5 sm:p-6 text-white shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
+        <div className="min-w-0">
           <div className="flex items-center gap-2 text-xs font-semibold tracking-wider uppercase text-[#E2A54D]">
             <span>Student Portal</span>
             <span>·</span>
             <span>USN: {profile.usn}</span>
           </div>
-          <h1 className="text-xl sm:text-2xl font-bold mt-1 text-white tracking-tight">
+          <h1 className="break-words text-xl sm:text-2xl font-bold mt-1 text-white tracking-tight">
             {profile.fullName}
           </h1>
           <p className="text-xs text-[#E4F2EA] mt-1">
@@ -420,6 +487,23 @@ const handleSave = async (e: React.FormEvent) => {
         </button>
         <button
           type="button"
+          onClick={() => handleTabChange('notices')}
+          className={`px-3.5 py-2 text-xs font-bold border-b-2 whitespace-nowrap transition-colors flex items-center gap-1.5 cursor-pointer ${
+            activeTab === 'notices'
+              ? 'border-[#0C2C47] text-[#0C2C47] bg-[#E4F2EA] rounded-t-lg'
+              : 'border-transparent text-[#2D5652] hover:text-[#0C2C47]'
+          }`}
+        >
+          <Bell className="w-3.5 h-3.5 text-[#2D5652]" />
+          <span>Notices</span>
+          {notices.length > 0 && (
+            <span className="rounded-full bg-[#E2A54D] px-1.5 text-[10px] font-bold text-[#0C2C47]">
+              {notices.length}
+            </span>
+          )}
+        </button>
+        <button
+          type="button"
           onClick={() => handleTabChange('personal')}
           className={`px-3.5 py-2 text-xs font-semibold border-b-2 whitespace-nowrap transition-colors cursor-pointer ${
             activeTab === 'personal'
@@ -504,7 +588,73 @@ const handleSave = async (e: React.FormEvent) => {
           <StudentPlacementMailbox student={profile} drives={drives} targetEmailId={targetEmailId} />
         )}
 
-      {activeTab !== 'schedule' && activeTab !== 'emails' && (
+        {activeTab === 'notices' && (
+          <section aria-labelledby="student-notices-heading" className="rounded-xl border border-[#97D3CD]/50 bg-white p-4 sm:p-5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="min-w-0">
+                <h2 id="student-notices-heading" className="break-words text-base font-bold text-[#0C2C47]">
+                  Department Notices
+                </h2>
+                <p className="mt-1 text-xs text-[#2D5652]">
+                  Notices shared with your department, semester, or you directly.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setNoticeRefreshVersion(version => version + 1)}
+                disabled={noticeLoadState === 'loading'}
+                className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-[#97D3CD]/60 px-3 text-xs font-semibold text-[#0C2C47] hover:bg-[#E4F2EA] disabled:opacity-50"
+              >
+                <RefreshCw className="h-3.5 w-3.5" />
+                Refresh
+              </button>
+            </div>
+
+            {noticeLoadState === 'loading' && (
+              <p role="status" className="mt-4 rounded-lg bg-[#F8FAF9] p-4 text-sm text-slate-600">
+                Loading department notices...
+              </p>
+            )}
+            {noticeLoadState === 'error' && (
+              <div role="alert" className="mt-4 rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
+                <p>{noticeLoadError}</p>
+                <button
+                  type="button"
+                  onClick={() => setNoticeRefreshVersion(version => version + 1)}
+                  className="mt-2 min-h-11 rounded-lg border border-rose-300 px-3 font-semibold hover:bg-rose-100"
+                >
+                  Try again
+                </button>
+              </div>
+            )}
+            {noticeLoadState === 'success' && notices.length === 0 && (
+              <p className="mt-4 rounded-lg bg-[#F8FAF9] p-4 text-sm text-slate-600">
+                There are no notices for you yet.
+              </p>
+            )}
+            {noticeLoadState === 'success' && notices.length > 0 && (
+              <div className="mt-4 space-y-3">
+                {notices.map(notice => (
+                  <article key={notice.id} className="min-w-0 break-words rounded-xl border border-[#97D3CD]/40 bg-[#F8FAF9] p-4">
+                    {notice.driveName && (
+                      <p className="mb-1 text-xs font-bold text-[#0C2C47]">{notice.driveName}</p>
+                    )}
+                    <p className="whitespace-pre-wrap text-sm text-[#2D5652]">{notice.message}</p>
+                    <p className="mt-2 text-xs text-slate-500">
+                      From {notice.senderName || 'SPC'} - {new Date(notice.createdAt).toLocaleString('en-IN', {
+                        dateStyle: 'medium',
+                        timeStyle: 'short',
+                        timeZone: 'Asia/Kolkata'
+                      })}
+                    </p>
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
+
+      {activeTab !== 'schedule' && activeTab !== 'emails' && activeTab !== 'notices' && (
         <div className="space-y-6">
           
           {/* PROFILE LOCK STATUS BANNER */}

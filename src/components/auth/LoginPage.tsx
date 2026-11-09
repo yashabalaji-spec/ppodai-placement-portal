@@ -23,9 +23,15 @@ import {
 
 interface LoginPageProps {
   onLoginSuccess: (user: UserAccount) => void;
+  notice?: string;
+  onRetryLogout?: () => void;
 }
 
-export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
+export const LoginPage: React.FC<LoginPageProps> = ({
+  onLoginSuccess,
+  notice,
+  onRetryLogout
+}) => {
   // 4 iconic visual modes from the uploaded images
   const [activePortalMode, setActivePortalMode] = useState<PortalMode>('student');
 
@@ -45,6 +51,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
   const [forgotOtp, setForgotOtp] = useState('');
   const [demoOtp, setDemoOtp] = useState('');
   const [forgotMessage, setForgotMessage] = useState('');
+  const [forgotMessageIsError, setForgotMessageIsError] = useState(false);
   const [isRequestingOtp, setIsRequestingOtp] = useState(false);
   const [newPassword, setNewPassword] = useState('');
   const [confirmNewPassword, setConfirmNewPassword] = useState('');
@@ -124,11 +131,13 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
 const handleForgotPassword = async () => {
   if (!forgotIdentifier.trim()) {
     setForgotMessage('Please enter your registered ID, USN or email.');
+    setForgotMessageIsError(true);
     return;
   }
 
   setIsRequestingOtp(true);
   setForgotMessage('');
+  setForgotMessageIsError(false);
   setDemoOtp('');
 
   try {
@@ -147,10 +156,12 @@ const handleForgotPassword = async () => {
 
     if (!response.ok) {
       setForgotMessage(data.message || 'Unable to request OTP.');
+      setForgotMessageIsError(true);
       return;
     }
 
     setForgotMessage(data.message || 'OTP request processed.');
+    setForgotMessageIsError(false);
 
     if (data.demoOtp) {
       setDemoOtp(data.demoOtp);
@@ -158,6 +169,7 @@ const handleForgotPassword = async () => {
   } catch (error) {
     console.error('Forgot password request failed:', error);
     setForgotMessage('Unable to connect to the server. Please try again.');
+    setForgotMessageIsError(true);
   } finally {
     setIsRequestingOtp(false);
   }
@@ -165,19 +177,23 @@ const handleForgotPassword = async () => {
 
 const handleResetPassword = async () => {
   setForgotMessage('');
+  setForgotMessageIsError(false);
 
   if (!/^\d{6}$/.test(forgotOtp)) {
     setForgotMessage('Enter the six-digit OTP.');
+    setForgotMessageIsError(true);
     return;
   }
 
   if (newPassword.length < 12) {
     setForgotMessage('Password must contain at least 12 characters.');
+    setForgotMessageIsError(true);
     return;
   }
 
   if (newPassword !== confirmNewPassword) {
     setForgotMessage('Passwords do not match.');
+    setForgotMessageIsError(true);
     return;
   }
 
@@ -201,10 +217,12 @@ const handleResetPassword = async () => {
 
     if (!response.ok) {
       setForgotMessage(data.message || 'Password reset failed.');
+      setForgotMessageIsError(true);
       return;
     }
 
     setForgotMessage('Password reset successfully! You can now sign in.');
+    setForgotMessageIsError(false);
     setForgotOtp('');
     setNewPassword('');
     setConfirmNewPassword('');
@@ -212,6 +230,7 @@ const handleResetPassword = async () => {
   } catch (error) {
     console.error('Password reset request failed:', error);
     setForgotMessage('Unable to connect to the server. Please try again.');
+    setForgotMessageIsError(true);
   } finally {
     setIsResettingPassword(false);
   }
@@ -231,6 +250,20 @@ const handleResetPassword = async () => {
       {/* Main Authentication Section */}
       <div className="flex-1 flex flex-col justify-center items-center px-4 py-6 sm:py-8">
         <div className="w-full max-w-2xl">
+          {notice && (
+            <div role="alert" className="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+              {notice}
+              {onRetryLogout && (
+                <button
+                  type="button"
+                  onClick={onRetryLogout}
+                  className="mt-2 block rounded-md border border-amber-500 px-3 py-1.5 font-semibold hover:bg-amber-100"
+                >
+                  Retry logout
+                </button>
+              )}
+            </div>
+          )}
           
           {/* Official GAT Logo Emblem & Headline */}
           <div className="text-center mb-6 flex flex-col items-center">
@@ -471,6 +504,7 @@ const handleResetPassword = async () => {
               onClick={() => {
               setForgotIdentifier(specialIdInput);
               setForgotMessage('');
+              setForgotMessageIsError(false);
               setDemoOtp('');
               setShowForgotPassword(true);
              }}
@@ -609,7 +643,10 @@ const handleResetPassword = async () => {
 )}
 
       {forgotMessage && (
-        <p className="mt-3 text-sm text-[#2D5652]">
+        <p
+          role={forgotMessageIsError ? 'alert' : 'status'}
+          className={`mt-3 text-sm ${forgotMessageIsError ? 'text-rose-700' : 'text-[#2D5652]'}`}
+        >
           {forgotMessage}
         </p>
       )}

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { apiFetch } from '../../services/apiFetch';
 import { UserAccount, StudentProfile, JobDescriptionMatch } from '../../types';
 import { extractSkillsFromJD, evaluateStudentJDMatch, rankStudentsForJD, JDRequirement } from '../../services/jdMatcher';
 import { generateCandidateShortlistPDF } from '../../services/pdfService';
@@ -154,7 +155,7 @@ Requirements:
     setEvaluationFeedback(null);
 
     try {
-      const response = await fetch('/api/evaluate-jd', {
+      const response = await apiFetch('/api/evaluate-jd', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -240,13 +241,13 @@ Requirements:
       
       {/* Header */}
       <div className="bg-[#0C2C47] rounded-2xl p-5 sm:p-6 text-white shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
+        <div className="min-w-0">
           <div className="flex items-center gap-2 text-xs font-semibold tracking-wider uppercase text-[#E2A54D]">
             <span>HR Portal</span>
             <span>·</span>
             <span>{companyName}</span>
           </div>
-          <h1 className="text-xl sm:text-2xl font-bold mt-1 text-white tracking-tight flex items-center gap-2">
+          <h1 className="min-w-0 flex flex-wrap items-center gap-2 break-words text-xl sm:text-2xl font-bold mt-1 text-white tracking-tight">
             <span>Candidate Skill Matcher</span>
           </h1>
           <p className="text-xs text-[#E4F2EA] mt-1 max-w-2xl">

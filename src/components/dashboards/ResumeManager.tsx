@@ -172,7 +172,7 @@ export const ResumeManager: React.FC<ResumeManagerProps> = ({ student }) => {
                 </div>
 
                 <div className="min-w-0">
-                  <h4 className="text-xs font-bold text-[#0C2C47] truncate group-hover:text-[#2D5652] transition-colors">
+                  <h4 className="text-xs font-bold text-[#0C2C47] break-all group-hover:text-[#2D5652] transition-colors">
                     {resume.name}
                   </h4>
                   <div className="text-[11px] text-[#2D5652]/70 mt-0.5 flex items-center gap-2 font-mono">

@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { UserAccount, StudentProfile, PlacementDrive, DriveLoadState, ProfileEditRequest } from '../../types';
+import { apiFetch } from '../../services/apiFetch';
 import { SectionWiseHODChart } from '../common/Charts';
 import { BRANCHES } from '../../data/mockData';
 import { TeamsPlacementCalendar } from '../common/TeamsPlacementCalendar';
@@ -65,7 +66,7 @@ export const HODDashboard: React.FC<HODDashboardProps> = ({
     let active = true;
     const loadRequests = async () => {
       try {
-        const response = await fetch('/api/hod/profile-edit-requests', {
+        const response = await apiFetch('/api/hod/profile-edit-requests', {
           credentials: 'same-origin'
         });
         const data = await response.json() as {
@@ -118,7 +119,7 @@ export const HODDashboard: React.FC<HODDashboardProps> = ({
     setReviewingRequestId(request.id);
     setReviewError('');
     try {
-      const response = await fetch(`/api/hod/profile-edit-requests/${encodeURIComponent(request.id)}`, {
+      const response = await apiFetch(`/api/hod/profile-edit-requests/${encodeURIComponent(request.id)}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'same-origin',
@@ -153,13 +154,13 @@ export const HODDashboard: React.FC<HODDashboardProps> = ({
       
       {/* HOD Header Banner */}
       <div className="bg-[#0C2C47] rounded-2xl p-5 sm:p-6 text-white shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
+        <div className="min-w-0">
           <div className="flex items-center gap-2 text-xs font-semibold tracking-wider uppercase text-[#E2A54D]">
             <span>Head of Department</span>
             <span>·</span>
             <span>{currentBranchCode}</span>
           </div>
-          <h1 className="text-xl sm:text-2xl font-bold mt-1 text-white tracking-tight">
+          <h1 className="break-words text-xl sm:text-2xl font-bold mt-1 text-white tracking-tight">
             Department of {branchMeta.name}
           </h1>
           <p className="text-xs text-[#E4F2EA] mt-1">

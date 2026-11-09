@@ -14,6 +14,13 @@ import {
   isRoleType,
   ROLE_PREVIEW_ROLES
 } from './src/types';
+import {
+  isNoticeVisibleToStudent,
+  normalizeNoticeAudience,
+  resolveStudentIdentity,
+  type NoticeAudienceInput,
+  type NormalizedNoticeAudience
+} from './src/services/noticeAudience';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -26,6 +33,49 @@ const PORT = Number(process.env.PORT) || 3000;
 
 app.use(express.json({ limit: '10mb' }));
 app.use(cookieParser());
+
+const authCookieOptions = {
+  httpOnly: true,
+  secure: process.env.NODE_ENV === 'production',
+  sameSite: 'lax' as const,
+  path: '/'
+};
+
+app.use((req, res, next) => {
+  if (req.path.startsWith('/api/')) {
+    res.setHeader('Cache-Control', 'no-store');
+  }
+
+  if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
+    return next();
+  }
+
+  if (req.get('sec-fetch-site') === 'cross-site') {
+    return res.status(403).json({ message: 'Cross-site requests are not allowed.' });
+  }
+
+  const origin = req.get('origin');
+  if (!origin || origin === 'null') {
+    return res.status(403).json({ message: 'A same-origin request is required.' });
+  }
+
+  try {
+    const originUrl = new URL(origin);
+    const requestHost = req.get('host');
+    const isProduction = process.env.NODE_ENV === 'production';
+    if (
+      !requestHost ||
+      originUrl.host.toLowerCase() !== requestHost.toLowerCase() ||
+      (isProduction && originUrl.protocol !== 'https:')
+    ) {
+      return res.status(403).json({ message: 'Cross-origin requests are not allowed.' });
+    }
+  } catch {
+    return res.status(403).json({ message: 'Invalid request origin.' });
+  }
+
+  return next();
+});
 
 // Convert a database account into the safe user object expected by the frontend.
 const toSafeUser = (row: any) => ({
@@ -188,56 +238,81 @@ const requireAuth = async (
   res: Response,
   next: NextFunction
 ) => {
+  const token = req.cookies?.ppodai_token;
+  const secret = process.env.JWT_SECRET;
+
+  if (!token || !secret) {
+    return res.status(401).json({
+      error: 'Authentication required.'
+    });
+  }
+
+  let decoded: {
+    sub: string;
+    role: string;
+    jti?: string;
+  };
+
   try {
-    const token = req.cookies?.ppodai_token;
-    const secret = process.env.JWT_SECRET;
-
-    if (!token || !secret) {
-      return res.status(401).json({
-        error: 'Authentication required.'
-      });
-    }
-
-    const decoded = jwt.verify(token, secret) as {
+    decoded = jwt.verify(token, secret) as {
       sub: string;
       role: string;
+      jti?: string;
     };
-
-    const result = await pool.query(
-  `SELECT id, role, company, department, usn
-   FROM users
-   WHERE id = $1 AND is_active IS TRUE
-   LIMIT 1`,
-  [decoded.sub]
-   );
-
-    const account = result.rows[0];
-
-    if (!account || account.role !== decoded.role) {
-      res.clearCookie('ppodai_token', { path: '/' });
-
-      return res.status(401).json({
-        error: 'Session is invalid. Please sign in again.'
-      });
-    }
-
-    (req as AuthenticatedRequest).authUser = {
-  id: account.id,
-  role: account.role,
-  company: account.company,
-  department: account.department,
-  usn: account.usn
-};
-
-    return next();
-
   } catch {
-    res.clearCookie('ppodai_token', { path: '/' });
-
+    res.clearCookie('ppodai_token', authCookieOptions);
     return res.status(401).json({
       error: 'Session expired. Please sign in again.'
     });
   }
+
+  if (!decoded.sub || !decoded.role || !decoded.jti) {
+    res.clearCookie('ppodai_token', authCookieOptions);
+    return res.status(401).json({
+      error: 'Session is no longer valid. Please sign in again.'
+    });
+  }
+
+  let result;
+  try {
+    result = await pool.query(
+      `SELECT id, role, company, department, usn
+       FROM users
+       WHERE id = $1
+         AND is_active IS TRUE
+         AND NOT EXISTS (
+           SELECT 1
+           FROM auth_token_revocations revoked
+           WHERE revoked.token_id = $2
+             AND revoked.expires_at > NOW()
+         )
+       LIMIT 1`,
+      [decoded.sub, decoded.jti]
+    );
+  } catch (error) {
+    console.error('Authentication session lookup failed:', error);
+    return res.status(503).json({
+      error: 'Unable to verify your session right now. Please try again.'
+    });
+  }
+
+  const account = result.rows[0];
+  if (!account || account.role !== decoded.role) {
+    res.clearCookie('ppodai_token', authCookieOptions);
+    return res.status(401).json({
+      error: 'Session is invalid. Please sign in again.'
+    });
+  }
+
+  (req as AuthenticatedRequest).authUser = {
+    id: account.id,
+    role: account.role,
+    company: account.company,
+    department: account.department,
+    usn: account.usn
+  };
+
+  return next();
 };
 
 // Allow only the specified roles to access a protected endpoint.
@@ -324,19 +399,16 @@ app.post('/api/auth/login', async (req, res) => {
 
     const user = toSafeUser(account);
 
+    await pool.query(
+      'DELETE FROM auth_token_revocations WHERE expires_at <= NOW()'
+    );
     const token = jwt.sign(
-      { sub: account.id, role: account.role },
+      { sub: account.id, role: account.role, jti: crypto.randomUUID() },
       secret,
       { expiresIn: '8h' }
     );
 
-    res.cookie('ppodai_token', token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      path: '/',
-      maxAge: 8 * 60 * 60 * 1000
-    });
+    res.cookie('ppodai_token', token, authCookieOptions);
 
     return res.json({ success: true, user });
 
@@ -357,13 +429,17 @@ app.post('/api/auth/forgot-password', async (req, res) => {
     }
 
     const secret = process.env.JWT_SECRET;
-    const demoEnabled =
-      process.env.NODE_ENV !== 'production' &&
-      process.env.ENABLE_DEMO_OTP === 'true';
+    const demoEnabled = process.env.ENABLE_DEMO_OTP === 'true';
 
     if (!secret) {
       return res.status(500).json({
         message: 'Password recovery is not configured.'
+      });
+    }
+
+    if (!demoEnabled) {
+      return res.status(503).json({
+        message: 'Password-reset delivery is not configured. Contact portal support.'
       });
     }
 
@@ -465,10 +541,13 @@ app.post('/api/auth/reset-password', async (req, res) => {
     });
   }
 
-  const client = await pool.connect();
+  let client: PoolClient | undefined;
+  let transactionStarted = false;
 
   try {
+    client = await pool.connect();
     await client.query('BEGIN');
+    transactionStarted = true;
 
     const accountResult = await client.query(
       `SELECT id
@@ -487,6 +566,7 @@ app.post('/api/auth/reset-password', async (req, res) => {
 
     if (!account) {
       await client.query('ROLLBACK');
+      transactionStarted = false;
       return res.status(400).json({
         message: 'Invalid or expired OTP.'
       });
@@ -511,6 +591,7 @@ app.post('/api/auth/reset-password', async (req, res) => {
       new Date(otpRecord.expires_at).getTime() <= Date.now()
     ) {
       await client.query('ROLLBACK');
+      transactionStarted = false;
       return res.status(400).json({
         message: 'Invalid or expired OTP.'
       });
@@ -539,6 +620,7 @@ app.post('/api/auth/reset-password', async (req, res) => {
       );
 
       await client.query('COMMIT');
+      transactionStarted = false;
 
       return res.status(400).json({
         message: nextAttempts >= 5
@@ -564,6 +646,7 @@ app.post('/api/auth/reset-password', async (req, res) => {
     );
 
     await client.query('COMMIT');
+    transactionStarted = false;
 
     return res.json({
       success: true,
@@ -571,53 +654,49 @@ app.post('/api/auth/reset-password', async (req, res) => {
     });
 
   } catch (error) {
-    await client.query('ROLLBACK');
+    if (client && transactionStarted) {
+      try {
+        await client.query('ROLLBACK');
+        transactionStarted = false;
+      } catch (rollbackError) {
+        console.error('Password reset rollback failed:', rollbackError);
+      }
+    }
     console.error('Password reset error:', error);
 
     return res.status(500).json({
       message: 'Could not reset password. Please try again.'
     });
   } finally {
-    client.release();
+    client?.release();
   }
 });
 
 // 2. Restore and verify the current login session.
-app.get('/api/auth/me', async (req, res) => {
+app.get('/api/auth/me', requireAuth, async (req, res) => {
   try {
-    const token = req.cookies?.ppodai_token;
-    const secret = process.env.JWT_SECRET;
-
-    if (!token || !secret) {
-      return res.status(401).json({ message: 'Not authenticated.' });
-    }
-
-    const decoded = jwt.verify(token, secret) as {
-      sub: string;
-      role: string;
-    };
-
+    const user = (req as AuthenticatedRequest).authUser!;
     const result = await pool.query(
       `SELECT id, name, email, role, special_id,
               department, designation, usn, company, is_active
        FROM users
        WHERE id = $1 AND is_active IS TRUE
        LIMIT 1`,
-      [decoded.sub]
+      [user.id]
     );
 
     const account = result.rows[0];
 
-    if (!account || account.role !== decoded.role) {
-      res.clearCookie('ppodai_token', { path: '/' });
+    if (!account || account.role !== user.role) {
+      res.clearCookie('ppodai_token', authCookieOptions);
       return res.status(401).json({ message: 'Session is no longer valid.' });
     }
 
     return res.json({ success: true, user: toSafeUser(account) });
 
-  } catch {
-    res.clearCookie('ppodai_token', { path: '/' });
-    return res.status(401).json({ message: 'Session expired. Please sign in again.' });
+  } catch (error) {
+    console.error('Session user retrieval failed:', error);
+    return res.status(500).json({ message: 'Unable to verify your session.' });
   }
 });
 // Retrieve companies from PostgreSQL.
@@ -648,9 +727,14 @@ app.get(
           contact_phone,
           tier,
           visited_year,
-          created_at
-         FROM companies
-         ORDER BY name ASC`
+          created_at,
+          COALESCE((
+            SELECT json_agg(job_profile.job_title ORDER BY job_profile.job_title)
+            FROM company_job_profiles job_profile
+            WHERE job_profile.company_id = companies.id
+          ), '[]'::json) AS job_profiles
+          FROM companies
+          ORDER BY name ASC`
       );
 
       const companies = result.rows.map((company: any) => ({
@@ -663,7 +747,8 @@ app.get(
         contactPhone: company.contact_phone || '',
         tier: company.tier || '',
         visitedYear: company.visited_year || null,
-        createdAt: company.created_at
+        createdAt: company.created_at,
+        jobProfiles: Array.isArray(company.job_profiles) ? company.job_profiles : []
       }));
 
       return res.json({
@@ -681,6 +766,365 @@ app.get(
     }
   }
 );
+
+const mapNoticeRow = (row: any) => ({
+  id: String(row.id),
+  message: row.message,
+  audienceType: row.audience_type,
+  targetBranches: row.target_branches || [],
+  targetSemesters: row.target_semesters || [],
+  targetUsns: row.target_usns || [],
+  senderName: row.sender_name || '',
+  driveId: row.drive_id || '',
+  driveName: row.drive_name || '',
+  createdAt: row.created_at
+});
+
+const isMissingNoticeTable = (error: unknown) =>
+  typeof error === 'object' &&
+  error !== null &&
+  'code' in error &&
+  error.code === '42P01';
+
+const noticeUnavailableResponse = (res: Response) =>
+  res.status(503).json({
+    message: 'The notice service is not initialized. Ask an administrator to apply the SPC notices migration.'
+  });
+
+app.get('/api/spc/notices', requireAuth, requireRoles('spc'), async (req, res) => {
+  try {
+    const user = (req as AuthenticatedRequest).authUser!;
+    const result = await pool.query(
+      `SELECT notice.*, sender.name AS sender_name,
+              COALESCE(company.name || ' - ' || drive.role_title, '') AS drive_name
+       FROM spc_notices notice
+       JOIN users sender ON sender.id = notice.sender_user_id
+       LEFT JOIN placement_drives drive ON drive.id = notice.drive_id
+       LEFT JOIN companies company ON company.id = drive.company_id
+       WHERE notice.sender_user_id = $1
+       ORDER BY notice.created_at DESC, notice.id DESC
+       LIMIT 100`,
+      [user.id]
+    );
+
+    return res.json({
+      success: true,
+      notices: result.rows.map(mapNoticeRow)
+    });
+  } catch (error) {
+    if (isMissingNoticeTable(error)) return noticeUnavailableResponse(res);
+    console.error('SPC notice history retrieval error:', error);
+    return res.status(500).json({ message: 'Unable to retrieve notice history.' });
+  }
+});
+
+app.post('/api/spc/notices', requireAuth, requireRoles('spc'), async (req, res) => {
+  const user = (req as AuthenticatedRequest).authUser!;
+  const message = typeof req.body?.message === 'string' ? req.body.message.trim() : '';
+
+  if (!message || message.length > 5000) {
+    return res.status(400).json({
+      message: 'Enter a notice containing between 1 and 5000 characters.'
+    });
+  }
+
+  if (!user.department?.trim()) {
+    return res.status(403).json({ message: 'Your account has no assigned department.' });
+  }
+
+  const rawAudience = req.body?.audience;
+  const allowedTypes = ['all', 'branches', 'semesters', 'students'];
+  if (!rawAudience || typeof rawAudience !== 'object' || !allowedTypes.includes(rawAudience.type)) {
+    return res.status(400).json({ message: 'Choose a valid notice audience.' });
+  }
+
+  const audienceInput: NoticeAudienceInput = {
+    type: rawAudience.type,
+    branches: Array.isArray(rawAudience.branches)
+      ? rawAudience.branches.filter((value: unknown): value is string => typeof value === 'string')
+      : [],
+    semesters: Array.isArray(rawAudience.semesters)
+      ? rawAudience.semesters.filter((value: unknown): value is number => typeof value === 'number')
+      : [],
+    studentUsns: Array.isArray(rawAudience.studentUsns)
+      ? rawAudience.studentUsns.filter((value: unknown): value is string => typeof value === 'string')
+      : []
+  };
+
+  let client: PoolClient | undefined;
+  let transactionStarted = false;
+
+  try {
+    client = await pool.connect();
+    await client.query('BEGIN');
+    transactionStarted = true;
+
+    const ownBranchResult = await client.query(
+      `SELECT branch_code
+       FROM branches
+       WHERE branch_code = $1
+          OR LOWER(TRIM(branch_name)) = LOWER(TRIM($1))
+       LIMIT 1`,
+      [user.department]
+    );
+    const ownBranch = ownBranchResult.rows[0]?.branch_code as string | undefined;
+
+    if (!ownBranch) {
+      await client.query('ROLLBACK');
+      transactionStarted = false;
+      return res.status(403).json({
+        message: 'Your assigned department could not be matched to a portal branch.'
+      });
+    }
+
+    if (audienceInput.type === 'branches') {
+      const requestedBranches = [...new Set(audienceInput.branches || [])];
+      if (requestedBranches.length !== 1) {
+        await client.query('ROLLBACK');
+        transactionStarted = false;
+        return res.status(403).json({
+          message: 'SPCs can only send notices to their assigned department.'
+        });
+      }
+
+      const requestedBranchResult = await client.query(
+        `SELECT branch_code
+         FROM branches
+         WHERE branch_code = $1
+            OR LOWER(TRIM(branch_name)) = LOWER(TRIM($1))
+         LIMIT 1`,
+        [requestedBranches[0]]
+      );
+      const requestedBranch = requestedBranchResult.rows[0]?.branch_code as string | undefined;
+      if (!requestedBranch || requestedBranch !== ownBranch) {
+        await client.query('ROLLBACK');
+        transactionStarted = false;
+        return res.status(403).json({
+          message: 'SPCs can only send notices to their assigned department.'
+        });
+      }
+
+      audienceInput.branches = [ownBranch];
+    }
+
+    let audience: NormalizedNoticeAudience;
+    try {
+      audience = normalizeNoticeAudience(audienceInput, ownBranch);
+    } catch (error) {
+      await client.query('ROLLBACK');
+      transactionStarted = false;
+      return res.status(400).json({
+        message: error instanceof Error ? error.message : 'Invalid notice audience.'
+      });
+    }
+
+    if (audience.type === 'semesters') {
+      const matchingStudents = await client.query(
+        `SELECT 1
+         FROM students s
+         WHERE ${STUDENT_BRANCH_CODE_SQL} = $1
+           AND s.semester = ANY($2::integer[])
+         LIMIT 1`,
+        [ownBranch, audience.semesters]
+      );
+      if (matchingStudents.rowCount === 0) {
+        await client.query('ROLLBACK');
+        transactionStarted = false;
+        return res.status(400).json({
+          message: 'No students were found in the selected semester(s) in your department.'
+        });
+      }
+    }
+
+    if (audience.type === 'students') {
+      const matchingStudents = await client.query(
+        `SELECT s.usn
+         FROM students s
+        WHERE UPPER(s.usn) = ANY($1::varchar[])
+           AND ${STUDENT_BRANCH_CODE_SQL} = $2`,
+        [audience.studentUsns, ownBranch]
+      );
+      if (matchingStudents.rowCount !== audience.studentUsns.length) {
+        await client.query('ROLLBACK');
+        transactionStarted = false;
+        return res.status(403).json({
+          message: 'Every selected student must belong to your assigned department.'
+        });
+      }
+    }
+
+    const driveId = typeof req.body?.driveId === 'string' && req.body.driveId.trim()
+      ? req.body.driveId.trim()
+      : null;
+    if (driveId) {
+      const driveResult = await client.query(
+        `SELECT drive.id
+         FROM placement_drives drive
+         WHERE drive.id = $1
+           AND drive.is_published IS TRUE
+           AND (
+             NOT EXISTS (
+               SELECT 1
+               FROM drive_target_branches empty_branch
+               WHERE empty_branch.drive_id = drive.id
+             )
+             OR EXISTS (
+               SELECT 1
+               FROM drive_target_branches visible_branch
+               WHERE visible_branch.drive_id = drive.id
+                 AND visible_branch.branch_code = $2
+             )
+           )
+         LIMIT 1`,
+        [driveId, ownBranch]
+      );
+      if (driveResult.rowCount === 0) {
+        await client.query('ROLLBACK');
+        transactionStarted = false;
+        return res.status(400).json({
+          message: 'The selected placement drive is unavailable to your department.'
+        });
+      }
+    }
+
+    const senderResult = await client.query(
+      'SELECT name FROM users WHERE id = $1 LIMIT 1',
+      [user.id]
+    );
+    const driveNameResult = driveId
+      ? await client.query(
+          `SELECT company.name || ' - ' || drive.role_title AS drive_name
+           FROM placement_drives drive
+           JOIN companies company ON company.id = drive.company_id
+           WHERE drive.id = $1`,
+          [driveId]
+        )
+      : { rows: [] };
+
+    const savedResult = await client.query(
+      `INSERT INTO spc_notices
+         (sender_user_id, drive_id, message, audience_type,
+          target_branches, target_semesters, target_usns)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING id, sender_user_id, drive_id, message, audience_type,
+                 target_branches, target_semesters, target_usns, created_at`,
+      [
+        user.id,
+        driveId,
+        message,
+        audience.type,
+        audience.branches,
+        audience.semesters,
+        audience.studentUsns
+      ]
+    );
+    await client.query('COMMIT');
+    transactionStarted = false;
+
+    const savedNotice = savedResult.rows[0];
+
+    return res.status(201).json({
+      success: true,
+      notice: mapNoticeRow({
+        ...savedNotice,
+        sender_name: senderResult.rows[0]?.name || '',
+        drive_name: driveNameResult.rows[0]?.drive_name || ''
+      })
+    });
+  } catch (error) {
+    if (client && transactionStarted) {
+      try {
+        await client.query('ROLLBACK');
+        transactionStarted = false;
+      } catch (rollbackError) {
+        console.error('SPC notice rollback failed:', rollbackError);
+      }
+    }
+    if (isMissingNoticeTable(error)) return noticeUnavailableResponse(res);
+    console.error('SPC notice creation error:', error);
+    return res.status(500).json({ message: 'Unable to save the notice.' });
+  } finally {
+    client?.release();
+  }
+});
+
+app.get('/api/student/notices', requireAuth, requireRoles('student'), async (req, res) => {
+  try {
+    const user = (req as AuthenticatedRequest).authUser!;
+    const studentResult = await pool.query(
+      `SELECT s.usn, ${STUDENT_BRANCH_CODE_SQL} AS branch_code, s.semester
+       FROM students s
+       WHERE s.user_id = $1
+       LIMIT 1`,
+      [user.id]
+    );
+    const identity = resolveStudentIdentity(
+      studentResult.rows[0],
+      user.usn
+    );
+
+    if (!identity.ok) {
+      if (identity.reason === 'missing-link') {
+        return res.status(404).json({
+          message: 'Your student record is not linked to your authenticated account.'
+        });
+      }
+
+      return res.status(409).json({
+        message: 'Your linked student record does not match your authenticated USN.'
+      });
+    }
+    const student = identity.student;
+
+    const result = await pool.query(
+      `SELECT notice.*, sender.name AS sender_name,
+              COALESCE(company.name || ' - ' || drive.role_title, '') AS drive_name
+       FROM spc_notices notice
+       JOIN users sender ON sender.id = notice.sender_user_id
+       LEFT JOIN placement_drives drive ON drive.id = notice.drive_id
+       LEFT JOIN companies company ON company.id = drive.company_id
+       WHERE
+         (notice.audience_type IN ('all', 'branches')
+          AND EXISTS (
+            SELECT 1
+            FROM unnest(notice.target_branches) AS target(branch_code)
+            WHERE LOWER(BTRIM(target.branch_code)) = LOWER(BTRIM($2))
+          ))
+         OR (notice.audience_type = 'semesters'
+             AND EXISTS (
+               SELECT 1
+               FROM unnest(notice.target_branches) AS target(branch_code)
+               WHERE LOWER(BTRIM(target.branch_code)) = LOWER(BTRIM($2))
+             )
+             AND $3 = ANY(notice.target_semesters))
+         OR (notice.audience_type = 'students'
+             AND EXISTS (
+               SELECT 1
+               FROM unnest(notice.target_branches) AS target(branch_code)
+               WHERE LOWER(BTRIM(target.branch_code)) = LOWER(BTRIM($2))
+             )
+             AND EXISTS (
+               SELECT 1
+               FROM unnest(notice.target_usns) AS target(target_usn)
+               WHERE UPPER(target.target_usn) = UPPER($1)
+             ))
+       ORDER BY notice.created_at DESC, notice.id DESC
+       LIMIT 100`,
+      [student.usn, student.branch_code, student.semester]
+    );
+
+    return res.json({
+      success: true,
+      notices: result.rows
+        .filter((notice: any) => isNoticeVisibleToStudent(notice, student))
+        .map(mapNoticeRow)
+    });
+  } catch (error) {
+    if (isMissingNoticeTable(error)) return noticeUnavailableResponse(res);
+    console.error('Student notice retrieval error:', error);
+    return res.status(500).json({ message: 'Unable to retrieve student notices.' });
+  }
+});
 
 app.get('/api/drives', requireAuth, async (req, res) => {
   try {
@@ -1196,6 +1640,21 @@ app.get(
         }
 
         studentQuery += ` WHERE ${STUDENT_BRANCH_CODE_SQL} = $1`;
+        queryParams.push(user.department);
+      } else if (user.role === 'spc') {
+        if (!user.department) {
+          return res.status(403).json({
+            message: 'Your account has no assigned department.'
+          });
+        }
+
+        studentQuery += ` WHERE ${STUDENT_BRANCH_CODE_SQL} = (
+          SELECT branch_code
+          FROM branches
+          WHERE branch_code = $1
+             OR LOWER(TRIM(branch_name)) = LOWER(TRIM($1))
+          LIMIT 1
+        )`;
         queryParams.push(user.department);
       } else if (user.role === 'hr') {
         studentQuery += `
@@ -1788,36 +2247,15 @@ app.patch(
 );
 
 // 3. Get the authenticated student's complete profile from PostgreSQL.
-app.get('/api/student/profile', async (req, res) => {
+app.get(
+  '/api/student/profile',
+  requireAuth,
+  requireRoles('student'),
+  async (req, res) => {
   try {
-    const token = req.cookies?.ppodai_token;
-    const secret = process.env.JWT_SECRET;
-
-    if (!token || !secret) {
-      return res.status(401).json({ message: 'Not authenticated.' });
-    }
-
-    const decoded = jwt.verify(token, secret) as {
-      sub: string;
-      role: string;
-    };
-
-    const accountResult = await pool.query(
-      `SELECT id, role, usn, is_active
-       FROM users
-       WHERE id = $1 AND is_active IS TRUE
-       LIMIT 1`,
-      [decoded.sub]
-    );
-
-    const account = accountResult.rows[0];
-
-    if (!account || account.role !== decoded.role) {
-      return res.status(401).json({ message: 'Invalid session.' });
-    }
-
-    if (account.role !== 'student' || !account.usn) {
-      return res.status(403).json({ message: 'Student access only.' });
+    const account = (req as AuthenticatedRequest).authUser!;
+    if (!account.usn) {
+      return res.status(403).json({ message: 'Student account has no linked USN.' });
     }
 
     // Retrieve the student's main profile.
@@ -2009,43 +2447,30 @@ app.get('/api/student/profile', async (req, res) => {
     console.error('Student profile retrieval error:', error);
     return res.status(500).json({
       message: 'Unable to retrieve student profile.'
-    });
+      }
+    );
   }
 });
 
 // Save the logged-in student's profile to PostgreSQL.
-app.put('/api/student/profile', async (req, res) => {
-  const client = await pool.connect();
+app.put(
+  '/api/student/profile',
+  requireAuth,
+  requireRoles('student'),
+  async (req, res) => {
+  let client: PoolClient;
 
   try {
-    const token = req.cookies?.ppodai_token;
-    const secret = process.env.JWT_SECRET;
+    client = await pool.connect();
+  } catch (error) {
+    console.error('Student profile database connection failed:', error);
+    return res.status(500).json({ message: 'Unable to save student profile.' });
+  }
 
-    if (!token || !secret) {
-      return res.status(401).json({ message: 'Not authenticated.' });
-    }
-
-    const decoded = jwt.verify(token, secret) as {
-      sub: string;
-      role: string;
-    };
-
-    if (decoded.role !== 'student') {
-      return res.status(403).json({ message: 'Student access only.' });
-    }
-
-    const accountResult = await client.query(
-      `SELECT id, role, usn, is_active
-       FROM users
-       WHERE id = $1 AND is_active IS TRUE
-       LIMIT 1`,
-      [decoded.sub]
-    );
-
-    const account = accountResult.rows[0];
-
-    if (!account || account.role !== 'student' || !account.usn) {
-      return res.status(401).json({ message: 'Invalid student session.' });
+  try {
+    const account = (req as AuthenticatedRequest).authUser!;
+    if (!account.usn) {
+      return res.status(403).json({ message: 'Student account has no linked USN.' });
     }
 
     const p = req.body;
@@ -2070,7 +2495,8 @@ app.put('/api/student/profile', async (req, res) => {
       await client.query('ROLLBACK');
       return res.status(403).json({
         message: 'Your profile is locked. Request permission from your HOD to edit it.'
-      });
+        }
+      );
     }
 
     await client.query(
@@ -2327,8 +2753,42 @@ app.put('/api/student/profile', async (req, res) => {
 });
 
 // 4. Logout.
-app.post('/api/auth/logout', (_req, res) => {
-  res.clearCookie('ppodai_token', { path: '/' });
+app.post('/api/auth/logout', async (req, res) => {
+  const token = req.cookies?.ppodai_token;
+  const secret = process.env.JWT_SECRET;
+  let revokeError: unknown;
+
+  if (token && secret) {
+    try {
+      const decoded = jwt.verify(token, secret) as {
+        jti?: string;
+        exp?: number;
+      };
+      if (decoded.jti && decoded.exp && decoded.exp * 1000 > Date.now()) {
+        await pool.query(
+          `INSERT INTO auth_token_revocations (token_id, expires_at)
+           VALUES ($1, TO_TIMESTAMP($2))
+           ON CONFLICT (token_id) DO NOTHING`,
+          [decoded.jti, decoded.exp]
+        );
+      }
+    } catch (error) {
+      if (error instanceof jwt.JsonWebTokenError || error instanceof jwt.TokenExpiredError) {
+        // An invalid or expired token is already unusable.
+      } else {
+        revokeError = error;
+      }
+    }
+  }
+
+  res.clearCookie('ppodai_token', authCookieOptions);
+  if (revokeError) {
+    console.error('Session revocation failed during logout:', revokeError);
+    return res.status(500).json({
+      success: false,
+      message: 'Your browser session was cleared, but the server could not revoke it. Please try again.'
+    });
+  }
   return res.json({ success: true });
 });
 

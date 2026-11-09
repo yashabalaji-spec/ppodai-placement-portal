@@ -383,6 +383,19 @@ export interface Company {
   jobProfiles: string[];
 }
 
+export interface PortalNotice {
+  id: string;
+  message: string;
+  audienceType: 'all' | 'branches' | 'semesters' | 'students';
+  targetBranches: string[];
+  targetSemesters: number[];
+  targetUsns: string[];
+  senderName: string;
+  driveId: string;
+  driveName: string;
+  createdAt: string;
+}
+
 export interface PlacementDrive {
   id: string;
   driveCode: string;

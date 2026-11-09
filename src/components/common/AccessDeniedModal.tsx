@@ -23,8 +23,8 @@ export const AccessDeniedModal: React.FC<AccessDeniedModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in">
-      <div className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl border border-[#97D3CD]/50 overflow-hidden text-center p-5 sm:p-6 space-y-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in overflow-y-auto">
+      <div className="relative w-full max-w-md max-h-[90dvh] bg-white rounded-2xl shadow-2xl border border-[#97D3CD]/50 overflow-y-auto text-center p-5 sm:p-6 space-y-4 my-auto">
         
         {/* Lock Animation Icon */}
         <div className="mx-auto w-14 h-14 rounded-full bg-[#EFEAE6] border-2 border-[#E2A54D]/50 flex items-center justify-center text-[#0C2C47]">
