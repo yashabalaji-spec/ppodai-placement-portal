@@ -266,7 +266,7 @@ export const DatabaseArchitectureModal: React.FC<DatabaseArchitectureModalProps>
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="text-sm font-bold text-slate-900">PostgreSQL DDL Migration Script</h3>
-                  <p className="text-slate-500 mt-0.5">Executable in pgAdmin, psql CLI, or Sequelize migration</p>
+                  <p className="text-slate-500 mt-0.5">For use with psql CLI or a PostgreSQL migration tool</p>
                 </div>
                 <button
                   onClick={copySql}

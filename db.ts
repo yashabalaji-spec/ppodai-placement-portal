@@ -2,7 +2,7 @@ import 'dotenv/config';
 import { Pool } from 'pg';
 
 if (!process.env.DATABASE_URL) {
-  throw new Error('DATABASE_URL is missing from the .env file');
+  throw new Error('DATABASE_URL is required in the application environment.');
 }
 
 export const pool = new Pool({

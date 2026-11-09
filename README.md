@@ -1,20 +1,16 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
-</div>
+# GAT PPODAI Placement Portal
 
-# Run and deploy your AI Studio app
+## Local development
 
-This contains everything you need to run your app locally.
+**Prerequisites:** Node.js and access to the project's Neon PostgreSQL database.
 
-View your app in AI Studio: https://ai.studio/apps/edacce6f-c02f-4159-9426-766d19c25f10
+1. Install dependencies with `npm install`.
+2. Copy `.env.example` to `.env` and set `DATABASE_URL` to the Neon pooled connection string. Keep `.env` local; do not commit it.
+3. Configure the other required environment variables in `.env` using the placeholders in `.env.example`.
+4. Start the application with `npm run dev`.
 
-## Run Locally
+The application and database seed script use `DATABASE_URL`. The application uses a PostgreSQL connection pool with SSL enabled. No local PostgreSQL server or pgAdmin setup is required.
 
-**Prerequisites:**  Node.js
+## Render deployment
 
-
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+Set the application's environment variables in the Render service settings. Set `DATABASE_URL` to the Neon pooled connection string; do not place database credentials in source files or commit them.
