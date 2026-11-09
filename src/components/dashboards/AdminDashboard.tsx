@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { UserAccount, StudentProfile, Company, PlacementDrive } from '../../types';
+import { UserAccount, StudentProfile, Company, PlacementDrive, DriveLoadState } from '../../types';
 import { BRANCHES, HISTORICAL_BATCH_METRICS } from '../../data/mockData';
 import { TeamsPlacementCalendar } from '../common/TeamsPlacementCalendar';
 import {
@@ -31,6 +31,10 @@ interface AdminDashboardProps {
   students: StudentProfile[];
   companies: Company[];
   drives: PlacementDrive[];
+  driveLoadState: DriveLoadState;
+  driveLoadError: string;
+  onRetryDrives: () => void;
+  onAddDrive: (newDrive: PlacementDrive) => void;
   onOpenDbArchitecture?: () => void;
 }
 
@@ -38,7 +42,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   user,
   students,
   companies,
-  drives
+  drives,
+  driveLoadState,
+  driveLoadError,
+  onRetryDrives,
+  onAddDrive
 }) => {
   const [activeTab, setActiveTab] = useState<'year_graphs' | 'branches' | 'drives' | 'student_packages' | 'calendar'>('year_graphs');
   const [selectedYear, setSelectedYear] = useState<number>(2026);
@@ -1212,6 +1220,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         <TeamsPlacementCalendar
           currentUser={user}
           drives={drives}
+          companies={companies}
+          onAddDrive={onAddDrive}
+          driveLoadState={driveLoadState}
+          driveLoadError={driveLoadError}
+          onRetryDrives={onRetryDrives}
         />
       )}
 

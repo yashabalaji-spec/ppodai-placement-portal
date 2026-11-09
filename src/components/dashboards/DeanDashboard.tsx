@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { UserAccount, StudentProfile, Company, PlacementDrive } from '../../types';
+import { UserAccount, StudentProfile, Company, PlacementDrive, DriveLoadState } from '../../types';
 import { OfferTierDistributionChart } from '../common/Charts';
 import { TeamsPlacementCalendar } from '../common/TeamsPlacementCalendar';
 import { 
@@ -23,6 +23,10 @@ interface DeanDashboardProps {
   students: StudentProfile[];
   companies: Company[];
   drives: PlacementDrive[];
+  driveLoadState: DriveLoadState;
+  driveLoadError: string;
+  onRetryDrives: () => void;
+  onAddDrive: (newDrive: PlacementDrive) => void;
   onOpenDriveModal?: () => void;
 }
 
@@ -30,7 +34,11 @@ export const DeanDashboard: React.FC<DeanDashboardProps> = ({
   user,
   students,
   companies,
-  drives
+  drives,
+  driveLoadState,
+  driveLoadError,
+  onRetryDrives,
+  onAddDrive
 }) => {
   const [activeTab, setActiveTab] = useState<'drives' | 'companies' | 'tier_breakdown' | 'calendar'>('drives');
   const [searchTerm, setSearchTerm] = useState('');
@@ -270,6 +278,11 @@ export const DeanDashboard: React.FC<DeanDashboardProps> = ({
         <TeamsPlacementCalendar
           currentUser={user}
           drives={drives}
+          companies={companies}
+          onAddDrive={onAddDrive}
+          driveLoadState={driveLoadState}
+          driveLoadError={driveLoadError}
+          onRetryDrives={onRetryDrives}
         />
       )}
 

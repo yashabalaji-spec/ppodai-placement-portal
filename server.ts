@@ -5,6 +5,7 @@ import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import cookieParser from 'cookie-parser';
 import { pool } from './db';
+import type { PoolClient } from 'pg';
 import { connectMongoDB } from './mong';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
@@ -33,6 +34,124 @@ const toSafeUser = (row: any) => ({
   usn: row.usn || '',
   company: row.company || ''
 });
+
+const DRIVE_SELECT = `
+  SELECT
+    d.*,
+    to_char(d.drive_date, 'YYYY-MM-DD') AS drive_date_text,
+    to_char(d.start_time, 'HH24:MI') AS start_time_text,
+    to_char(d.end_time, 'HH24:MI') AS end_time_text,
+    c.name AS company_name,
+    COALESCE(creator.name, d.scheduled_by) AS scheduled_by_display,
+    COALESCE((
+      SELECT json_agg(s.skill_name ORDER BY s.skill_name)
+      FROM drive_required_skills s
+      WHERE s.drive_id = d.id
+    ), '[]'::json) AS required_skills,
+    COALESCE((
+      SELECT json_agg(b.branch_code ORDER BY b.branch_code)
+      FROM drive_target_branches b
+      WHERE b.drive_id = d.id
+    ), '[]'::json) AS target_branches,
+    COALESCE((
+      SELECT json_agg(
+        json_build_object(
+          'roundNumber', r.round_number,
+          'roundName', r.round_name,
+          'roundDate', to_char(r.round_date, 'YYYY-MM-DD'),
+          'venue', r.venue
+        ) ORDER BY r.round_number
+      )
+      FROM drive_rounds r
+      WHERE r.drive_id = d.id
+    ), '[]'::json) AS rounds
+  FROM placement_drives d
+  LEFT JOIN companies c ON c.id = d.company_id
+  LEFT JOIN users creator ON creator.id = d.scheduled_by
+`;
+
+const mapDriveRow = (row: any) => ({
+  id: row.id,
+  driveCode: row.drive_code,
+  companyId: row.company_id,
+  companyName: row.company_name || '',
+  roleTitle: row.role_title,
+  ctcLPA: Number(row.ctc_lpa ?? 0),
+  minCGPA: Number(row.min_cgpa ?? 0),
+  maxBacklogsAllowed: Number(row.max_backlogs_allowed ?? 0),
+  driveDate: row.drive_date_text || '',
+  venue: row.venue || '',
+  status: row.status,
+  eligibleStudentCount: 0,
+  enrolledCount: 0,
+  shortlistedCount: 0,
+  jobDescription: row.job_description || '',
+  meetingType: row.meeting_type || undefined,
+  teamsMeetingLink: row.teams_meeting_link || undefined,
+  isPublished: Boolean(row.is_published),
+  scheduledBy: row.scheduled_by_display || '',
+  startTime: row.start_time_text || undefined,
+  endTime: row.end_time_text || undefined,
+  registrationDeadline: row.registration_deadline,
+  requiredSkills: row.required_skills || [],
+  targetBranches: row.target_branches || [],
+  rounds: (row.rounds || []).map((round: any) => ({
+    roundNumber: Number(round.roundNumber),
+    roundName: round.roundName,
+    date: round.roundDate || '',
+    venue: round.venue || '',
+    qualifiedStudents: []
+  }))
+});
+
+const sortStrings = (values: string[]) => [...values].sort();
+
+const matchesDriveRequest = (savedDrive: any, input: any) => {
+  const savedRounds = [...(savedDrive.rounds || [])]
+    .map((round: any) => ({
+      roundNumber: Number(round.roundNumber),
+      roundName: round.roundName,
+      date: round.date || '',
+      venue: round.venue || ''
+    }))
+    .sort((a, b) => a.roundNumber - b.roundNumber);
+  const requestedRounds = [...input.rounds]
+    .map((round: any) => ({
+      roundNumber: Number(round.roundNumber),
+      roundName: round.roundName,
+      date: round.date || '',
+      venue: round.venue || ''
+    }))
+    .sort((a, b) => a.roundNumber - b.roundNumber);
+
+  return savedDrive.companyId === input.companyId &&
+    savedDrive.roleTitle === input.roleTitle &&
+    Number(savedDrive.ctcLPA) === Number(input.ctcLPA) &&
+    Number(savedDrive.minCGPA) === Number(input.minCGPA) &&
+    Number(savedDrive.maxBacklogsAllowed) === Number(input.maxBacklogsAllowed) &&
+    savedDrive.driveDate === input.driveDate &&
+    savedDrive.startTime === input.startTime &&
+    savedDrive.endTime === input.endTime &&
+    savedDrive.meetingType === input.meetingType &&
+    (savedDrive.teamsMeetingLink || '') === input.teamsMeetingLink &&
+    savedDrive.venue === input.venue &&
+    savedDrive.status === input.status &&
+    Boolean(savedDrive.isPublished) === input.isPublished &&
+    (savedDrive.jobDescription || '') === input.jobDescription &&
+    JSON.stringify(sortStrings(savedDrive.targetBranches || [])) ===
+      JSON.stringify(sortStrings(input.targetBranches)) &&
+    JSON.stringify(sortStrings(savedDrive.requiredSkills || [])) ===
+      JSON.stringify(sortStrings(input.requiredSkills)) &&
+    JSON.stringify(savedRounds) === JSON.stringify(requestedRounds);
+};
+
+const getDriveById = async (client: PoolClient, driveId: string) => {
+  const result = await client.query(
+    `${DRIVE_SELECT} WHERE d.id = $1 LIMIT 1`,
+    [driveId]
+  );
+  return result.rows[0] ? mapDriveRow(result.rows[0]) : null;
+};
 
 type AuthenticatedRequest = Request & {
   authUser?: {
@@ -546,81 +665,67 @@ app.get(
 
 app.get('/api/drives', requireAuth, async (req, res) => {
   try {
-    const result = await pool.query(`
-      SELECT
-        d.*,
-        c.name AS company_name,
-        COALESCE(
-          (SELECT json_agg(s.skill_name)
-           FROM drive_required_skills s
-           WHERE s.drive_id = d.id),
-          '[]'::json
-        ) AS required_skills,
-        COALESCE(
-          (SELECT json_agg(b.branch_code)
-           FROM drive_target_branches b
-           WHERE b.drive_id = d.id),
-          '[]'::json
-        ) AS target_branches,
-        COALESCE(
-          (SELECT json_agg(
-            json_build_object(
-              'id', r.id,
-              'roundNumber', r.round_number,
-              'roundName', r.round_name,
-              'roundDate', r.round_date,
-              'venue', r.venue
-            ) ORDER BY r.round_number
+    const user = (req as AuthenticatedRequest).authUser!;
+    const broadAccessRoles = [
+      'pcc',
+      'placement_dean',
+      'faculty_mgmt',
+      'principal',
+      'admin'
+    ];
+    const branchScopedRoles = ['student', 'hod', 'fpc', 'spc'];
+    const hasBroadAccess = broadAccessRoles.includes(user.role);
+
+    if (!hasBroadAccess && !branchScopedRoles.includes(user.role)) {
+      return res.status(403).json({
+        success: false,
+        message: 'Your role is not authorized to view placement schedules.'
+      });
+    }
+
+    let department = user.department?.trim() || '';
+    if (user.role === 'student' && !department && user.usn) {
+      const studentResult = await pool.query(
+        `SELECT COALESCE(branch_code, department) AS department
+         FROM students
+         WHERE usn = $1
+         LIMIT 1`,
+        [user.usn]
+      );
+      department = studentResult.rows[0]?.department?.trim() || '';
+    }
+
+    if (!hasBroadAccess && !department) {
+      return res.status(403).json({
+        success: false,
+        message: 'Your account must have a department assigned to view placement schedules.'
+      });
+    }
+
+    const result = await pool.query(
+      `${DRIVE_SELECT}
+       WHERE $1::boolean
+          OR (
+            d.is_published IS TRUE
+            AND (
+              NOT EXISTS (
+                SELECT 1
+                FROM drive_target_branches empty_branch
+                WHERE empty_branch.drive_id = d.id
+              )
+              OR EXISTS (
+                SELECT 1
+                FROM drive_target_branches visible_branch
+                WHERE visible_branch.drive_id = d.id
+                  AND visible_branch.branch_code = $2
+              )
+            )
           )
-          FROM drive_rounds r
-          WHERE r.drive_id = d.id),
-          '[]'::json
-        ) AS rounds
-      FROM placement_drives d
-      LEFT JOIN companies c ON c.id = d.company_id
-      ORDER BY d.created_at DESC
-    `);
+       ORDER BY d.created_at DESC`,
+      [hasBroadAccess, department]
+    );
 
-    const drives = result.rows.map((row) => ({
-  id: row.id,
-  driveCode: row.drive_code,
-  companyId: row.company_id,
-  companyName: row.company_name,
-  roleTitle: row.role_title,
-
-  // Match the frontend PlacementDrive interface
-  ctcLPA: Number(row.ctc_lpa ?? 0),
-  minCGPA: Number(row.min_cgpa ?? 0),
-  maxBacklogsAllowed: row.max_backlogs_allowed ?? 0,
-
-  driveDate: row.drive_date,
-  venue: row.venue,
-  status: row.status,
-
-  eligibleStudentCount: 0,
-  enrolledCount: 0,
-  shortlistedCount: 0,
-
-  jobDescription: row.job_description,
-  meetingType: row.meeting_type,
-  teamsMeetingLink: row.teams_meeting_link,
-  isPublished: row.is_published,
-  scheduledBy: row.scheduled_by,
-  registrationDeadline: row.registration_deadline,
-  startTime: row.start_time,
-  endTime: row.end_time,
-
-  requiredSkills: row.required_skills,
-  targetBranches: row.target_branches,
-
-  rounds: row.rounds.map((round: any) => ({
-    roundNumber: round.roundNumber,
-    roundName: round.roundName,
-    date: round.roundDate,
-    venue: round.venue,
-    qualifiedStudents: []
-  }))
-}));
+    const drives = result.rows.map(mapDriveRow);
 
     res.json({
       success: true,
@@ -641,11 +746,10 @@ app.post(
   requireAuth,
   requireRoles('pcc', 'placement_dean', 'admin'),
   async (req, res) => {
-    let client;
+    let client: PoolClient | undefined;
+    let transactionStarted = false;
 
     try {
-      client = await pool.connect();
-
       const {
         companyId,
         roleTitle,
@@ -653,57 +757,123 @@ app.post(
         minCGPA = 7.0,
         maxBacklogsAllowed = 0,
         driveDate,
+        startTime,
+        endTime,
+        meetingType,
+        teamsMeetingLink = '',
         venue,
-        targetBranches = [],
+        targetBranches,
         requiredSkills = [],
         rounds = [],
         jobDescription = '',
-        status = 'Upcoming'
-      } = req.body;
-
-      // 1. Validate required fields
-      if (
-        !companyId ||
-        !roleTitle?.trim() ||
-        !driveDate ||
-        !venue?.trim()
-      ) {
-        return res.status(400).json({
-          success: false,
-          message: 'Company, role title, drive date and venue are required.'
-        });
-      }
-
-      // 2. Validate arrays
-      if (
-        !Array.isArray(targetBranches) ||
-        !Array.isArray(requiredSkills) ||
-        !Array.isArray(rounds)
-      ) {
-        return res.status(400).json({
-          success: false,
-          message: 'Branches, skills and rounds must be arrays.'
-        });
-      }
-
-      // 3. Validate numeric fields
-      if (
-        !Number.isFinite(Number(ctcLPA)) ||
-        !Number.isFinite(Number(minCGPA)) ||
-        !Number.isFinite(Number(maxBacklogsAllowed))
-      ) {
-        return res.status(400).json({
-          success: false,
-          message: 'Invalid CTC, CGPA or backlog value.'
-        });
-      }
-
+        status = 'Upcoming',
+        isPublished = true
+      } = req.body || {};
+      const idempotencyKey = req.get('Idempotency-Key')?.trim() || '';
+      const authUser = (req as AuthenticatedRequest).authUser!;
+      const allowedMeetingTypes = [
+        'Pre-Placement Talk (PPT)',
+        'Campus Placement Drive',
+        'Online Assessment',
+        'Technical Interviews',
+        'Virtual Teams Meeting'
+      ];
       const allowedStatuses = [
         'Upcoming',
         'In Progress',
         'Completed',
         'Cancelled'
       ];
+      const validDate = (value: unknown): value is string => {
+        if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+          return false;
+        }
+        const parsed = new Date(`${value}T00:00:00.000Z`);
+        return !Number.isNaN(parsed.getTime()) &&
+          parsed.toISOString().slice(0, 10) === value;
+      };
+      const validTime = (value: unknown): value is string =>
+        typeof value === 'string' &&
+        /^(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/.test(value);
+
+      if (
+        !/^[A-Za-z0-9._:-]{8,128}$/.test(idempotencyKey)
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: 'A valid Idempotency-Key header is required.'
+        });
+      }
+
+      if (
+        typeof companyId !== 'string' ||
+        !companyId.trim() ||
+        typeof roleTitle !== 'string' ||
+        !roleTitle.trim() ||
+        !validDate(driveDate) ||
+        !validTime(startTime) ||
+        !validTime(endTime) ||
+        startTime >= endTime ||
+        !allowedMeetingTypes.includes(meetingType) ||
+        typeof venue !== 'string' ||
+        !venue.trim()
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: 'Company, title, valid date, start/end times, meeting type and venue are required.'
+        });
+      }
+
+      if (typeof teamsMeetingLink !== 'string') {
+        return res.status(400).json({
+          success: false,
+          message: 'Teams meeting link must be a URL.'
+        });
+      }
+      const normalizedTeamsLink = teamsMeetingLink.trim();
+      if (normalizedTeamsLink) {
+        try {
+          if (new URL(normalizedTeamsLink).protocol !== 'https:') {
+            throw new Error('Teams links must use HTTPS.');
+          }
+        } catch {
+          return res.status(400).json({
+            success: false,
+            message: 'Enter a valid HTTPS Teams meeting link.'
+          });
+        }
+      }
+
+      if (
+        !Array.isArray(targetBranches) ||
+        targetBranches.length === 0 ||
+        targetBranches.some((branch: unknown) => typeof branch !== 'string' || !branch.trim()) ||
+        !Array.isArray(requiredSkills) ||
+        requiredSkills.some((skill: unknown) => typeof skill !== 'string') ||
+        !Array.isArray(rounds) ||
+        typeof jobDescription !== 'string'
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: 'At least one target branch is required; branches, skills and rounds must be valid arrays.'
+        });
+      }
+
+      if (
+        !Number.isFinite(Number(ctcLPA)) ||
+        Number(ctcLPA) < 0 ||
+        !Number.isFinite(Number(minCGPA)) ||
+        Number(minCGPA) < 0 ||
+        Number(minCGPA) > 10 ||
+        !Number.isInteger(Number(maxBacklogsAllowed)) ||
+        Number(maxBacklogsAllowed) < 0 ||
+        typeof isPublished !== 'boolean'
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid CTC, CGPA, backlog or publication value.'
+        });
+      }
 
       if (!allowedStatuses.includes(status)) {
         return res.status(400).json({
@@ -712,51 +882,120 @@ app.post(
         });
       }
 
-      // Remove duplicate branch codes and clean skill names
-      const branches = [...new Set(targetBranches)];
-      const skills = [
-        ...new Set(
-          requiredSkills
-            .filter((skill: unknown) => typeof skill === 'string')
-            .map((skill: string) => skill.trim())
-            .filter(Boolean)
-        )
-      ];
+      const branches = [...new Set(
+        targetBranches.map((branch: string) => branch.trim())
+      )].sort();
+      const skills = [...new Set(
+        requiredSkills.map((skill: string) => skill.trim()).filter(Boolean)
+      )].sort();
+      const normalizedRounds = rounds.map((round: any) => ({
+        roundNumber: Number(round.roundNumber),
+        roundName: typeof round.roundName === 'string' ? round.roundName.trim() : '',
+        date: round.date === undefined || round.date === null || round.date === ''
+          ? ''
+          : round.date,
+        venue: typeof round.venue === 'string' && round.venue.trim()
+          ? round.venue.trim()
+          : venue.trim()
+      }));
 
-      // 4. Start database transaction
+      if (normalizedRounds.some((round: any) =>
+        !Number.isInteger(round.roundNumber) ||
+        round.roundNumber < 1 ||
+        !round.roundName ||
+        (round.date && !validDate(round.date))
+      )) {
+        return res.status(400).json({
+          success: false,
+          message: 'Each round needs a valid number and name; round dates must use YYYY-MM-DD.'
+        });
+      }
+
+      const input = {
+        companyId: companyId.trim(),
+        roleTitle: roleTitle.trim(),
+        ctcLPA: Number(ctcLPA),
+        minCGPA: Number(minCGPA),
+        maxBacklogsAllowed: Number(maxBacklogsAllowed),
+        driveDate,
+        startTime: startTime.slice(0, 5),
+        endTime: endTime.slice(0, 5),
+        meetingType,
+        teamsMeetingLink: normalizedTeamsLink,
+        venue: venue.trim(),
+        targetBranches: branches,
+        requiredSkills: skills,
+        jobDescription,
+        status,
+        isPublished,
+        rounds: normalizedRounds
+      };
+      const keyHash = crypto.createHash('sha256')
+        .update(`${authUser.id}:${idempotencyKey}`)
+        .digest();
+      const driveId = `drv_${keyHash.toString('hex')}`;
+      const advisoryLockId = keyHash.readBigInt64BE(0).toString();
+
+      client = await pool.connect();
       await client.query('BEGIN');
+      transactionStarted = true;
+      await client.query(
+        'SELECT pg_advisory_xact_lock($1::bigint)',
+        [advisoryLockId]
+      );
 
-      // 5. Verify selected company
+      const existingDrive = await getDriveById(client, driveId);
+      if (existingDrive) {
+        if (!matchesDriveRequest(existingDrive, input)) {
+          await client.query('ROLLBACK');
+          transactionStarted = false;
+          return res.status(409).json({
+            success: false,
+            message: 'This Idempotency-Key was already used for a different meeting request.'
+          });
+        }
+
+        await client.query('COMMIT');
+        transactionStarted = false;
+        return res.status(200).json({
+          success: true,
+          message: 'This meeting was already saved.',
+          replayed: true,
+          drive: existingDrive
+        });
+      }
+
       const companyResult = await client.query(
         'SELECT id FROM companies WHERE id = $1',
-        [companyId]
+        [input.companyId]
       );
 
       if (companyResult.rows.length === 0) {
-        throw new Error('Selected company does not exist.');
+        await client.query('ROLLBACK');
+        transactionStarted = false;
+        return res.status(400).json({
+          success: false,
+          message: 'Selected company does not exist.'
+        });
       }
 
-      // 6. Verify selected branches
-      if (branches.length > 0) {
-        const branchResult = await client.query(
-          `SELECT branch_code
-           FROM branches
-           WHERE branch_code = ANY($1::varchar[])`,
-          [branches]
-        );
+      const branchResult = await client.query(
+        `SELECT branch_code
+         FROM branches
+         WHERE branch_code = ANY($1::varchar[])`,
+        [branches]
+      );
 
-        if (branchResult.rows.length !== branches.length) {
-          throw new Error('One or more selected branches do not exist.');
-        }
+      if (branchResult.rows.length !== branches.length) {
+        await client.query('ROLLBACK');
+        transactionStarted = false;
+        return res.status(400).json({
+          success: false,
+          message: 'One or more selected branches do not exist.'
+        });
       }
 
-      // 7. Generate drive ID and drive code
-      const driveId = `drv_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
-      const driveCode = `DRV-${String(driveDate).slice(0, 4)}-${Date.now().toString().slice(-6)}`;
-
-      const authUser = (req as AuthenticatedRequest).authUser;
-
-      // 8. Insert placement drive
+      const driveCode = `DRV-${input.driveDate.slice(0, 4)}-${Date.now().toString().slice(-6)}`;
       await client.query(
         `INSERT INTO placement_drives (
           id,
@@ -770,26 +1009,35 @@ app.post(
           venue,
           status,
           job_description,
-          scheduled_by
+          meeting_type,
+          teams_meeting_link,
+          is_published,
+          scheduled_by,
+          start_time,
+          end_time
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
         [
           driveId,
           driveCode,
-          companyId,
-          roleTitle.trim(),
-          Number(ctcLPA),
-          Number(minCGPA),
-          Number(maxBacklogsAllowed),
-          driveDate,
-          venue.trim(),
-          status,
-          jobDescription,
-          authUser?.id ?? null
+          input.companyId,
+          input.roleTitle,
+          input.ctcLPA,
+          input.minCGPA,
+          input.maxBacklogsAllowed,
+          input.driveDate,
+          input.venue,
+          input.status,
+          input.jobDescription,
+          input.meetingType,
+          input.teamsMeetingLink || null,
+          input.isPublished,
+          authUser.id,
+          input.startTime,
+          input.endTime
         ]
       );
 
-      // 9. Insert required skills
       for (const skill of skills) {
         await client.query(
           `INSERT INTO drive_required_skills (drive_id, skill_name)
@@ -798,7 +1046,6 @@ app.post(
         );
       }
 
-      // 10. Insert target branches
       for (const branch of branches) {
         await client.query(
           `INSERT INTO drive_target_branches (drive_id, branch_code)
@@ -807,12 +1054,7 @@ app.post(
         );
       }
 
-      // 11. Insert placement rounds
-      for (const round of rounds) {
-        if (!round.roundName?.trim()) {
-          throw new Error('Every round must have a round name.');
-        }
-
+      for (const round of normalizedRounds) {
         await client.query(
           `INSERT INTO drive_rounds (
             drive_id,
@@ -824,27 +1066,33 @@ app.post(
           VALUES ($1, $2, $3, $4, $5)`,
           [
             driveId,
-            Number(round.roundNumber),
-            round.roundName.trim(),
+            round.roundNumber,
+            round.roundName,
             round.date || null,
-            round.venue || venue.trim()
+            round.venue
           ]
         );
       }
 
-      // 12. Save all changes
+      const savedDrive = await getDriveById(client, driveId);
+      if (!savedDrive) {
+        throw new Error('The saved drive could not be reloaded from PostgreSQL.');
+      }
+
       await client.query('COMMIT');
+      transactionStarted = false;
 
       return res.status(201).json({
         success: true,
         message: 'Placement drive created successfully.',
-        driveId,
-        driveCode
+        replayed: false,
+        drive: savedDrive
       });
 
     } catch (error) {
-      if (client) {
+      if (client && transactionStarted) {
         await client.query('ROLLBACK');
+        transactionStarted = false;
       }
 
       console.error('Create placement drive error:', error);

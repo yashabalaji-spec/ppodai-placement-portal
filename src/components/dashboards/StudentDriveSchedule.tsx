@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { StudentProfile, PlacementDrive } from '../../types';
+import { StudentProfile, PlacementDrive, DriveLoadState } from '../../types';
 import { TeamsPlacementCalendar } from '../common/TeamsPlacementCalendar';
 import { 
   Calendar, 
@@ -27,11 +27,17 @@ import { generateStudentResumePDF } from '../../services/pdfService';
 interface StudentDriveScheduleProps {
   student: StudentProfile;
   drives: PlacementDrive[];
+  driveLoadState: DriveLoadState;
+  driveLoadError: string;
+  onRetryDrives: () => void;
 }
 
 export const StudentDriveSchedule: React.FC<StudentDriveScheduleProps> = ({
   student,
-  drives
+  drives,
+  driveLoadState,
+  driveLoadError,
+  onRetryDrives
 }) => {
   const [displayMode, setDisplayMode] = useState<'calendar' | 'cards'>('calendar');
   const [searchTerm, setSearchTerm] = useState('');
@@ -168,6 +174,9 @@ export const StudentDriveSchedule: React.FC<StudentDriveScheduleProps> = ({
             department: student.department
           }}
           drives={drives}
+          driveLoadState={driveLoadState}
+          driveLoadError={driveLoadError}
+          onRetryDrives={onRetryDrives}
           studentCgpa={student.cgpa}
           studentBacklogs={student.currentBacklogs}
           studentDepartment={student.department}

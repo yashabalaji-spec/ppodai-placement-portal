@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { UserAccount, StudentProfile, Company, PlacementDrive, RoleType, checkRoleAccess } from './types';
+import { UserAccount, StudentProfile, Company, PlacementDrive, RoleType, DriveLoadState, checkRoleAccess } from './types';
 import { INITIAL_USERS, INITIAL_STUDENTS, INITIAL_COMPANIES, INITIAL_DRIVES } from './data/mockData';
 import { Navbar, ROLE_LABELS } from './components/Navbar';
 import { RoleSwitcherModal } from './components/RoleSwitcherModal';
@@ -43,6 +43,14 @@ const [currentUser, setCurrentUser] = useState<UserAccount>(INITIAL_USERS[7]);
 
  // Students are loaded from PostgreSQL after authentication.
 const [students, setStudents] = useState<StudentProfile[]>([]);
+const [driveLoadState, setDriveLoadState] = useState<DriveLoadState>('loading');
+const [driveLoadError, setDriveLoadError] = useState('');
+const [driveRefreshVersion, setDriveRefreshVersion] = useState(0);
+ const [studentProfileLoadState, setStudentProfileLoadState] = useState<{
+   usn: string | undefined;
+   status: 'loading' | 'success' | 'error';
+   message?: string;
+ } | null>(null);
 
   // Companies & Drives
   const [companies, setCompanies] = useState<Company[]>([]);
@@ -89,8 +97,14 @@ useEffect(() => {
   // Load the logged-in student's profile from PostgreSQL.
   useEffect(() => {
     if (!isAuthenticated || currentUser.role !== 'student') {
+      setStudentProfileLoadState(null);
       return;
     }
+
+    const requestedUsn = currentUser.usn;
+    let isActive = true;
+    setStudents([]);
+    setStudentProfileLoadState({ usn: requestedUsn, status: 'loading' });
 
     const loadStudentProfile = async () => {
       try {
@@ -99,24 +113,42 @@ useEffect(() => {
           credentials: 'same-origin'
         });
 
-        const data = await response.json();
+        const data = await response.json() as {
+          message?: string;
+          student?: StudentProfile;
+        };
 
         if (!response.ok) {
-          console.error('Student profile loading failed:', data.message);
-          return;
+          throw new Error(data.message || 'Unable to load your student profile.');
         }
 
-        const databaseStudent = data.student as StudentProfile;
+        const databaseStudent = data.student;
+        if (!databaseStudent || databaseStudent.usn !== requestedUsn) {
+          throw new Error('The student profile does not match the authenticated USN.');
+        }
 
+        if (!isActive) return;
         setStudents([databaseStudent]);
-
+        setStudentProfileLoadState({ usn: requestedUsn, status: 'success' });
         console.log('Student profile loaded from PostgreSQL.');
       } catch (error) {
+        if (!isActive) return;
         console.error('Student profile loading error:', error);
+        setStudentProfileLoadState({
+          usn: requestedUsn,
+          status: 'error',
+          message: error instanceof Error
+            ? error.message
+            : 'Unable to load your student profile.'
+        });
       }
     };
 
     loadStudentProfile();
+
+    return () => {
+      isActive = false;
+    };
   }, [isAuthenticated, currentUser.role, currentUser.usn]);
 // Load authorised student records for staff dashboards.
 useEffect(() => {
@@ -184,9 +216,24 @@ useEffect(() => {
 
   // Load placement drives from PostgreSQL after authentication.
   useEffect(() => {
+    let isActive = true;
+
     if (!isAuthenticated) {
+      setDrives([]);
+      setDriveLoadState('loading');
       return;
     }
+
+    if (currentUser.role === 'hr') {
+      setDrives([]);
+      setDriveLoadError('');
+      setDriveLoadState('success');
+      return;
+    }
+
+    setDrives([]);
+    setDriveLoadError('');
+    setDriveLoadState('loading');
 
     const loadDrives = async () => {
       try {
@@ -198,24 +245,48 @@ useEffect(() => {
         const data = await response.json();
 
         if (!response.ok) {
-          console.error('Placement drives loading failed:', data.message);
-          return;
+          throw new Error(data.message || data.error || 'Unable to load placement drives.');
         }
 
+        if (!Array.isArray(data.drives)) {
+          throw new Error('The server returned an invalid placement drive list.');
+        }
+
+        if (!isActive) return;
         setDrives(data.drives as PlacementDrive[]);
+        setDriveLoadState('success');
 
         console.log(
           `Loaded ${data.count} placement drives from PostgreSQL.`
         );
       } catch (error) {
+        if (!isActive) return;
         console.error('Placement drives loading error:', error);
+        setDriveLoadError(
+          error instanceof Error ? error.message : 'Unable to load placement drives.'
+        );
+        setDriveLoadState('error');
       }
     };
 
     loadDrives();
-  }, [isAuthenticated]);
+    return () => {
+      isActive = false;
+    };
+  }, [
+    isAuthenticated,
+    currentUser.id,
+    currentUser.role,
+    currentUser.department,
+    currentUser.usn,
+    driveRefreshVersion
+  ]);
 
   const handleLoginSuccess = (user: UserAccount) => {
+    if (user.role === 'student') {
+      setStudents([]);
+      setStudentProfileLoadState(null);
+    }
     setCurrentUser(user);
     setIsAuthenticated(true);
   };
@@ -258,7 +329,13 @@ useEffect(() => {
   };
 
   const handleAddDrive = (newDrive: PlacementDrive) => {
-    setDrives(prev => [newDrive, ...prev]);
+    setDrives(prev => [newDrive, ...prev.filter(drive => drive.id !== newDrive.id)]);
+    setDriveLoadState('success');
+    setDriveLoadError('');
+  };
+
+  const handleRetryDrives = () => {
+    setDriveRefreshVersion(version => version + 1);
   };
 
   const handleUpdateDrive = (updatedDrive: PlacementDrive) => {
@@ -320,7 +397,13 @@ useEffect(() => {
   };
 
   // Find active student object if student role is active
-  const activeStudentProfile = students.find(s => s.usn === currentUser.usn) || students[0];
+const activeStudentProfile = students.find(
+  s => s.usn === currentUser.usn
+);
+const currentStudentProfileLoadState =
+  studentProfileLoadState?.usn === currentUser.usn
+    ? studentProfileLoadState
+    : null;
    // Wait until the backend verifies the existing session
 if (isCheckingSession) {
   return (
@@ -446,6 +529,9 @@ if (isCheckingSession) {
             students={students}
             companies={companies}
             drives={drives}
+            driveLoadState={driveLoadState}
+            driveLoadError={driveLoadError}
+            onRetryDrives={handleRetryDrives}
           />
         )}
 
@@ -456,6 +542,10 @@ if (isCheckingSession) {
             students={students}
             companies={companies}
             drives={drives}
+            driveLoadState={driveLoadState}
+            driveLoadError={driveLoadError}
+            onRetryDrives={handleRetryDrives}
+            onAddDrive={handleAddDrive}
           />
         )}
 
@@ -465,6 +555,9 @@ if (isCheckingSession) {
             user={currentUser}
             students={students}
             drives={drives}
+            driveLoadState={driveLoadState}
+            driveLoadError={driveLoadError}
+            onRetryDrives={handleRetryDrives}
             onApproveEditRequest={handleApproveEditRequest}
             onRejectEditRequest={handleRejectEditRequest}
           />
@@ -479,6 +572,9 @@ if (isCheckingSession) {
             drives={drives}
             onAddDrive={handleAddDrive}
             onUpdateDrive={handleUpdateDrive}
+            driveLoadState={driveLoadState}
+            driveLoadError={driveLoadError}
+            onRetryDrives={handleRetryDrives}
           />
         )}
 
@@ -488,6 +584,9 @@ if (isCheckingSession) {
             user={currentUser}
             students={students}
             drives={drives}
+            driveLoadState={driveLoadState}
+            driveLoadError={driveLoadError}
+            onRetryDrives={handleRetryDrives}
           />
         )}
 
@@ -497,18 +596,42 @@ if (isCheckingSession) {
             user={currentUser}
             students={students}
             drives={drives}
+            driveLoadState={driveLoadState}
+            driveLoadError={driveLoadError}
+            onRetryDrives={handleRetryDrives}
           />
         )}
 
         {/* SET 3: STUDENT - FULL 43 FIELDS, LOCKED PROFILE & HOD PERMISSION WORKFLOW */}
         {currentUser.role === 'student' && (
-          <StudentPortal
-            student={activeStudentProfile}
-            drives={drives}
-            onUpdateProfile={handleUpdateStudentProfile}
-          />
+          currentStudentProfileLoadState?.status === 'success' && activeStudentProfile ? (
+            <StudentPortal
+              student={activeStudentProfile}
+              drives={drives}
+              onUpdateProfile={handleUpdateStudentProfile}
+              driveLoadState={driveLoadState}
+              driveLoadError={driveLoadError}
+              onRetryDrives={handleRetryDrives}
+            />
+          ) : currentStudentProfileLoadState?.status === 'error' ? (
+            <div className="min-h-[40vh] flex items-center justify-center px-4">
+              <div
+                role="alert"
+                className="max-w-md rounded-xl border border-red-200 bg-red-50 p-6 text-center"
+              >
+                <p className="font-semibold text-red-800">Unable to load your student profile</p>
+                <p className="mt-2 text-sm text-red-700">{currentStudentProfileLoadState.message}</p>
+              </div>
+            </div>
+          ) : (
+            <div
+              role="status"
+              className="min-h-[40vh] flex items-center justify-center px-4"
+            >
+              <p className="text-sm text-gray-600">Loading your student profile...</p>
+            </div>
+          )
         )}
-
         {/* SET 4: HR (EXTERNAL) - JD Upload & Match Engine */}
         {currentUser.role === 'hr' && (
           <HRPortal
@@ -525,6 +648,10 @@ if (isCheckingSession) {
             companies={companies}
             drives={drives}
             onOpenDbArchitecture={() => setDbArchitectureOpen(true)}
+            driveLoadState={driveLoadState}
+            driveLoadError={driveLoadError}
+            onRetryDrives={handleRetryDrives}
+            onAddDrive={handleAddDrive}
           />
         )}
 

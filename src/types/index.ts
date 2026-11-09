@@ -10,6 +10,8 @@ export type RoleType =
   | 'hr'               // Set 4: HR (External)
   | 'admin';           // Set 5: Admin / Super User
 
+export type DriveLoadState = 'loading' | 'success' | 'error';
+
 export interface UserAccount {
   id: string;
   name: string;

@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
-import { UserAccount, StudentProfile, Company, PlacementDrive } from '../../types';
+import React, { useEffect, useRef, useState } from 'react';
+import { UserAccount, StudentProfile, Company, PlacementDrive, DriveLoadState } from '../../types';
 import { TeamsPlacementCalendar } from '../common/TeamsPlacementCalendar';
 import { PCCEmailDispatcherConsole } from '../common/PCCEmailDispatcherConsole';
+import { BRANCHES } from '../../data/mockData';
+import { createPlacementDrive, getTodayDateInIST } from '../../services/placementDriveService';
 import { 
   Calendar, 
   Clock, 
@@ -27,6 +29,9 @@ interface PCCDashboardProps {
   drives: PlacementDrive[];
   onAddDrive: (newDrive: PlacementDrive) => void;
   onUpdateDrive: (updatedDrive: PlacementDrive) => void;
+  driveLoadState: DriveLoadState;
+  driveLoadError: string;
+  onRetryDrives: () => void;
 }
 
 export const PCCDashboard: React.FC<PCCDashboardProps> = ({
@@ -35,7 +40,10 @@ export const PCCDashboard: React.FC<PCCDashboardProps> = ({
   companies,
   drives,
   onAddDrive,
-  onUpdateDrive
+  onUpdateDrive,
+  driveLoadState,
+  driveLoadError,
+  onRetryDrives
 }) => {
   const [activeTab, setActiveTab] = useState<'calendar' | 'scheduling' | 'email_dispatcher' | 'shortlists' | 'offer_letters'>('calendar');
   const [showScheduleModal, setShowScheduleModal] = useState(false);
@@ -44,100 +52,105 @@ export const PCCDashboard: React.FC<PCCDashboardProps> = ({
   const [newCompany, setNewCompany] = useState('Google India');
   const [newRole, setNewRole] = useState('Cloud Solutions Engineer');
   const [newCtc, setNewCtc] = useState(18.0);
-  const [newDate, setNewDate] = useState('2026-10-30');
+  const [newDate, setNewDate] = useState(getTodayDateInIST);
+  const [newStartTime, setNewStartTime] = useState('09:30');
+  const [newEndTime, setNewEndTime] = useState('16:30');
+  const [newMeetingType, setNewMeetingType] = useState<NonNullable<PlacementDrive['meetingType']>>('Campus Placement Drive');
+  const [newTeamsMeetingLink, setNewTeamsMeetingLink] = useState('');
   const [newVenue, setNewVenue] = useState('CCC Lab 2 & Placement Cell');
   const [newBranches, setNewBranches] = useState<string[]>(['CSE', 'ISE', 'AIML', 'ECE']);
+  const [isCreatingDrive, setIsCreatingDrive] = useState(false);
+  const [createDriveError, setCreateDriveError] = useState('');
+  const [createDriveSuccess, setCreateDriveSuccess] = useState('');
+  const idempotencyRequest = useRef<{ fingerprint: string; key: string } | null>(null);
+  const isCreatingRef = useRef(false);
 
-  
+  useEffect(() => {
+    if (companies.length > 0 && !companies.some(company => company.name === newCompany)) {
+      setNewCompany(companies[0].name);
+    }
+  }, [companies, newCompany]);
+
 const handleCreateDrive = async (e: React.FormEvent) => {
   e.preventDefault();
+  if (isCreatingRef.current) return;
 
+  setCreateDriveError('');
+  setCreateDriveSuccess('');
   try {
+    if (driveLoadState !== 'success') {
+      setCreateDriveError('Load the current placement schedule from the Calendar tab before creating a meeting.');
+      return;
+    }
+
     // Find the actual company ID from PostgreSQL-loaded companies
     const selectedCompany = companies.find(
       (company) => company.name === newCompany
     );
 
     if (!selectedCompany) {
-      alert('Selected company was not found. Please select a valid company.');
+      setCreateDriveError('Selected company was not found. Please choose a company from the list.');
       return;
     }
 
-    const response = await fetch('/api/drives', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      credentials: 'include',
-      body: JSON.stringify({
-        companyId: selectedCompany.id,
-        roleTitle: newRole,
-        ctcLPA: Number(newCtc),
-        minCGPA: 7.0,
-        maxBacklogsAllowed: 0,
-        driveDate: newDate,
-        venue: newVenue,
-        targetBranches: newBranches,
-        requiredSkills: [],
-        jobDescription: '',
-        status: 'Upcoming',
-        rounds: [
-          {
-            roundNumber: 1,
-            roundName: 'Online Coding / Technical Assessment',
-            date: newDate,
-            venue: newVenue
-          }
-        ]
-      })
-    });
-
-    const result = await response.json();
-
-    if (!response.ok || !result.success) {
-      throw new Error(result.message || 'Failed to create placement drive.');
-    }
-
-    const driveObj: PlacementDrive = {
-      id: result.driveId,
-      driveCode: result.driveCode,
+    const payload = {
       companyId: selectedCompany.id,
-      companyName: selectedCompany.name,
-      roleTitle: newRole,
+      roleTitle: newRole.trim(),
       ctcLPA: Number(newCtc),
-      targetBranches: newBranches,
       minCGPA: 7.0,
       maxBacklogsAllowed: 0,
       driveDate: newDate,
+      startTime: newStartTime,
+      endTime: newEndTime,
+      meetingType: newMeetingType,
+      teamsMeetingLink: newTeamsMeetingLink.trim(),
       venue: newVenue,
-      status: 'Upcoming',
-      eligibleStudentCount: 0,
-      shortlistedCount: 0,
+      targetBranches: newBranches,
+      requiredSkills: [],
+      jobDescription: '',
+      status: 'Upcoming' as const,
+      isPublished: true,
       rounds: [
         {
           roundNumber: 1,
-          roundName: 'Online Coding / Technical Assessment',
+          roundName: newMeetingType,
           date: newDate,
-          venue: newVenue,
-          qualifiedStudents: []
+          venue: newVenue
         }
       ]
     };
+    const fingerprint = JSON.stringify(payload);
+    if (idempotencyRequest.current?.fingerprint !== fingerprint) {
+      idempotencyRequest.current = {
+        fingerprint,
+        key: crypto.randomUUID()
+      };
+    }
 
-    onAddDrive(driveObj);
+    isCreatingRef.current = true;
+    setIsCreatingDrive(true);
+    const savedDrive = await createPlacementDrive(payload, idempotencyRequest.current.key);
+    idempotencyRequest.current = null;
+    onAddDrive(savedDrive);
+    setCreateDriveSuccess('Meeting saved to PostgreSQL and added to the calendar.');
     setShowScheduleModal(false);
-
-    alert('Placement drive created and saved successfully!');
-
   } catch (error) {
     console.error('Create drive error:', error);
-
-    alert(
+    setCreateDriveError(
       error instanceof Error
         ? error.message
         : 'Something went wrong while creating the drive.'
     );
+  } finally {
+    isCreatingRef.current = false;
+    setIsCreatingDrive(false);
   }
+};
+
+const toggleNewBranch = (branchCode: string) => {
+  setNewBranches(current => current.includes(branchCode)
+    ? current.filter(branch => branch !== branchCode)
+    : [...current, branchCode]);
 };
 
 
@@ -168,6 +181,12 @@ const handleCreateDrive = async (e: React.FormEvent) => {
           <span>New Drive</span>
         </button>
       </div>
+
+      {createDriveSuccess && (
+        <p role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs font-medium text-emerald-800">
+          {createDriveSuccess}
+        </p>
+      )}
 
       {/* Tabs */}
       <div className="flex border-b border-[#97D3CD]/30 gap-1 overflow-x-auto no-scrollbar pb-0.5">
@@ -236,8 +255,12 @@ const handleCreateDrive = async (e: React.FormEvent) => {
         <TeamsPlacementCalendar
           currentUser={user}
           drives={drives}
+          companies={companies}
           onAddDrive={onAddDrive}
           onUpdateDrive={onUpdateDrive}
+          driveLoadState={driveLoadState}
+          driveLoadError={driveLoadError}
+          onRetryDrives={onRetryDrives}
         />
       )}
 
@@ -424,13 +447,18 @@ const handleCreateDrive = async (e: React.FormEvent) => {
             <form onSubmit={handleCreateDrive} className="p-6 space-y-4 text-xs">
               <div>
                 <label className="font-semibold text-slate-700 block mb-1">Company Name</label>
-                <input 
-                  type="text" 
-                  value={newCompany} 
-                  onChange={(e) => setNewCompany(e.target.value)} 
+                <select
+                  value={newCompany}
+                  onChange={(e) => setNewCompany(e.target.value)}
                   required
                   className="w-full px-3 py-2 border border-slate-200 rounded-lg"
-                />
+                  disabled={companies.length === 0 || isCreatingDrive}
+                >
+                  {companies.length === 0 && <option value="">No companies available</option>}
+                  {companies.map(company => (
+                    <option key={company.id} value={company.name}>{company.name}</option>
+                  ))}
+                </select>
               </div>
 
               <div>
@@ -468,6 +496,43 @@ const handleCreateDrive = async (e: React.FormEvent) => {
                 </div>
               </div>
 
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="font-semibold text-slate-700 block mb-1">Start Time (IST)</label>
+                  <input
+                    type="time"
+                    value={newStartTime}
+                    onChange={(e) => setNewStartTime(e.target.value)}
+                    required
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg"
+                  />
+                </div>
+                <div>
+                  <label className="font-semibold text-slate-700 block mb-1">End Time (IST)</label>
+                  <input
+                    type="time"
+                    value={newEndTime}
+                    onChange={(e) => setNewEndTime(e.target.value)}
+                    required
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg"
+                  />
+                </div>
+                <div>
+                  <label className="font-semibold text-slate-700 block mb-1">Meeting Type</label>
+                  <select
+                    value={newMeetingType}
+                    onChange={(e) => setNewMeetingType(e.target.value as NonNullable<PlacementDrive['meetingType']>)}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg"
+                  >
+                    <option>Campus Placement Drive</option>
+                    <option>Pre-Placement Talk (PPT)</option>
+                    <option>Online Assessment</option>
+                    <option>Technical Interviews</option>
+                    <option>Virtual Teams Meeting</option>
+                  </select>
+                </div>
+              </div>
+
               <div>
                 <label className="font-semibold text-slate-700 block mb-1">Campus Venue</label>
                 <input 
@@ -479,6 +544,39 @@ const handleCreateDrive = async (e: React.FormEvent) => {
                 />
               </div>
 
+              <div>
+                <label className="font-semibold text-slate-700 block mb-1">Microsoft Teams Meeting Link</label>
+                <input
+                  type="url"
+                  value={newTeamsMeetingLink}
+                  onChange={(e) => setNewTeamsMeetingLink(e.target.value)}
+                  placeholder="https://teams.microsoft.com/..."
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg"
+                />
+              </div>
+
+              <fieldset>
+                <legend className="font-semibold text-slate-700 mb-2">Target Branches</legend>
+                <div className="grid grid-cols-4 gap-2">
+                  {BRANCHES.map(branch => (
+                    <label key={branch.code} className="flex items-center gap-1.5 rounded border border-slate-200 px-2 py-1.5">
+                      <input
+                        type="checkbox"
+                        checked={newBranches.includes(branch.code)}
+                        onChange={() => toggleNewBranch(branch.code)}
+                      />
+                      {branch.code}
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+
+              {createDriveError && (
+                <p role="alert" className="rounded border border-red-200 bg-red-50 px-3 py-2 text-red-700">
+                  {createDriveError}
+                </p>
+              )}
+
               <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
                 <button 
                   type="button" 
@@ -489,9 +587,10 @@ const handleCreateDrive = async (e: React.FormEvent) => {
                 </button>
                 <button 
                   type="submit" 
+                  disabled={isCreatingDrive || companies.length === 0 || newBranches.length === 0}
                   className="px-4 py-2 bg-teal-600 hover:bg-teal-500 text-white rounded-lg font-semibold"
                 >
-                  Publish Schedule
+                  {isCreatingDrive ? 'Saving…' : 'Publish Schedule'}
                 </button>
               </div>
             </form>

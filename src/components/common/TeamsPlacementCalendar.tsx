@@ -1,6 +1,13 @@
-import React, { useState, useMemo } from 'react';
-import { UserAccount, PlacementDrive, RoleType } from '../../types';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { UserAccount, PlacementDrive, RoleType, Company, DriveLoadState } from '../../types';
 import { BRANCHES } from '../../data/mockData';
+import {
+  createPlacementDrive,
+  formatDriveDate,
+  formatMeetingTimeIST,
+  getTodayDateInIST,
+  isPastMeetingInIST
+} from '../../services/placementDriveService';
 import {
   Calendar as CalendarIcon,
   ChevronLeft,
@@ -29,8 +36,12 @@ import {
 interface TeamsPlacementCalendarProps {
   currentUser: UserAccount;
   drives: PlacementDrive[];
+  companies?: Company[];
   onAddDrive?: (newDrive: PlacementDrive) => void;
   onUpdateDrive?: (updatedDrive: PlacementDrive) => void;
+  driveLoadState?: DriveLoadState;
+  driveLoadError?: string;
+  onRetryDrives?: () => void;
   // If student is logged in, pass student details for eligibility checking
   studentCgpa?: number;
   studentBacklogs?: number;
@@ -40,15 +51,18 @@ interface TeamsPlacementCalendarProps {
 export const TeamsPlacementCalendar: React.FC<TeamsPlacementCalendarProps> = ({
   currentUser,
   drives,
+  companies = [],
   onAddDrive,
   onUpdateDrive,
+  driveLoadState = 'success',
+  driveLoadError = '',
+  onRetryDrives,
   studentCgpa,
   studentBacklogs,
   studentDepartment
 }) => {
-  // Current calendar view date: Defaults to October 2026 (the active placement season in mockData)
-  const [currentYear, setCurrentYear] = useState<number>(2026);
-  const [currentMonth, setCurrentMonth] = useState<number>(9); // 0-indexed: 9 = October
+  const [currentYear, setCurrentYear] = useState<number>(() => Number(getTodayDateInIST().slice(0, 4)));
+  const [currentMonth, setCurrentMonth] = useState<number>(() => Number(getTodayDateInIST().slice(5, 7)) - 1);
   const [viewMode, setViewMode] = useState<'month' | 'agenda' | 'week'>('month');
   const [selectedBranchFilter, setSelectedBranchFilter] = useState<string>('ALL');
   const [selectedDriveModal, setSelectedDriveModal] = useState<PlacementDrive | null>(null);
@@ -59,9 +73,9 @@ export const TeamsPlacementCalendar: React.FC<TeamsPlacementCalendarProps> = ({
   const [companyName, setCompanyName] = useState('Google India');
   const [roleTitle, setRoleTitle] = useState('Software Engineer - University Graduate');
   const [ctcLPA, setCtcLPA] = useState<number>(32.0);
-  const [driveDate, setDriveDate] = useState('2026-10-22');
-  const [startTime, setStartTime] = useState('09:30 AM');
-  const [endTime, setEndTime] = useState('04:30 PM');
+  const [driveDate, setDriveDate] = useState(getTodayDateInIST);
+  const [startTime, setStartTime] = useState('09:30');
+  const [endTime, setEndTime] = useState('16:30');
   const [meetingType, setMeetingType] = useState<PlacementDrive['meetingType']>('Campus Placement Drive');
   const [venue, setVenue] = useState('Central Computing Center Lab 1 & 2');
   const [teamsMeetingLink, setTeamsMeetingLink] = useState('https://teams.microsoft.com/l/meetup-join/gat-campus-placement-2026');
@@ -71,13 +85,24 @@ export const TeamsPlacementCalendar: React.FC<TeamsPlacementCalendarProps> = ({
   const [companyInfo, setCompanyInfo] = useState('Global technology leader in cloud computing, search engine architecture, and artificial intelligence models.');
   const [jobDescription, setJobDescription] = useState('Build high-scale distributed backend systems, design responsive interfaces, and optimize algorithmic runtime performance.');
   const [skillsText, setSkillsText] = useState('Data Structures, Algorithms, Python, Java, Cloud Computing');
+  const [isSavingMeeting, setIsSavingMeeting] = useState(false);
+  const [meetingSaveError, setMeetingSaveError] = useState('');
+  const [meetingSaveSuccess, setMeetingSaveSuccess] = useState('');
+  const idempotencyRequest = useRef<{ fingerprint: string; key: string } | null>(null);
+  const isSavingRef = useRef(false);
 
-  // Permission Checks:
-  // "who can schedule this: PCC"
-  const canSchedule = currentUser.role === 'pcc' || currentUser.role === 'admin';
+  const canSchedule = currentUser.role === 'pcc' ||
+    currentUser.role === 'placement_dean' ||
+    currentUser.role === 'admin';
 
   // Determine user's effective department
   const effectiveDept = studentDepartment || currentUser.department || (currentUser.role === 'student' ? 'CSE' : undefined);
+
+  useEffect(() => {
+    if (companies.length > 0 && !companies.some(company => company.name === companyName)) {
+      setCompanyName(companies[0].name);
+    }
+  }, [companies, companyName]);
 
   // Month Names
   const monthNames = [
@@ -88,6 +113,7 @@ export const TeamsPlacementCalendar: React.FC<TeamsPlacementCalendarProps> = ({
   // Days in month calculation
   const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
   const firstDayOfWeek = new Date(currentYear, currentMonth, 1).getDay(); // 0 is Sunday, 1 is Monday
+  const todayDateInIST = getTodayDateInIST();
 
   // Navigation handlers
   const handlePrevMonth = () => {
@@ -109,8 +135,9 @@ export const TeamsPlacementCalendar: React.FC<TeamsPlacementCalendarProps> = ({
   };
 
   const handleGoToToday = () => {
-    setCurrentYear(2026);
-    setCurrentMonth(9); // October 2026
+    const today = getTodayDateInIST();
+    setCurrentYear(Number(today.slice(0, 4)));
+    setCurrentMonth(Number(today.slice(5, 7)) - 1);
   };
 
   // =========================================================================
@@ -125,7 +152,7 @@ export const TeamsPlacementCalendar: React.FC<TeamsPlacementCalendarProps> = ({
     return drives.filter(drive => {
       // 1. Search term filter
       if (searchTerm) {
-        const matchesTerm = 
+        const matchesTerm =
           drive.companyName.toLowerCase().includes(searchTerm.toLowerCase()) ||
           drive.roleTitle.toLowerCase().includes(searchTerm.toLowerCase()) ||
           drive.venue.toLowerCase().includes(searchTerm.toLowerCase());
@@ -136,7 +163,7 @@ export const TeamsPlacementCalendar: React.FC<TeamsPlacementCalendarProps> = ({
       if (currentUser.role === 'student') {
         const studentBranch = effectiveDept || 'CSE';
         // If targetBranches is defined and non-empty, student's branch MUST be in targetBranches
-        if (drive.targetBranches && drive.targetBranches.length > 0) {
+        if (drive.targetBranches.length > 0) {
           const isTargetedToStudentBranch = drive.targetBranches.includes(studentBranch);
           if (!isTargetedToStudentBranch) {
             return false; // Student CANNOT see company if their branch is not targeted!
@@ -148,7 +175,7 @@ export const TeamsPlacementCalendar: React.FC<TeamsPlacementCalendarProps> = ({
       // 3. HOD Role Access Filter: STRICT OWN DEPARTMENT ISOLATION
       if (currentUser.role === 'hod') {
         const hodBranch = currentUser.department || 'CSE';
-        if (drive.targetBranches && drive.targetBranches.length > 0) {
+        if (drive.targetBranches.length > 0) {
           const isTargetedToHodDept = drive.targetBranches.includes(hodBranch);
           if (!isTargetedToHodDept) {
             return false; // HOD cannot see drives not recruiting from their department
@@ -160,7 +187,7 @@ export const TeamsPlacementCalendar: React.FC<TeamsPlacementCalendarProps> = ({
       // 4. FPC & SPC Role Access Filter: OWN DEPARTMENT
       if (currentUser.role === 'fpc' || currentUser.role === 'spc') {
         const coordBranch = currentUser.department || 'CSE';
-        if (drive.targetBranches && drive.targetBranches.length > 0) {
+        if (drive.targetBranches.length > 0) {
           return drive.targetBranches.includes(coordBranch);
         }
         return true;
@@ -169,7 +196,7 @@ export const TeamsPlacementCalendar: React.FC<TeamsPlacementCalendarProps> = ({
       // 5. Higher Leadership (Dean, Principal, Management, PCC, Admin)
       // Can view everything, with optional selectedBranchFilter
       if (selectedBranchFilter !== 'ALL') {
-        return drive.targetBranches.includes(selectedBranchFilter);
+        return drive.targetBranches.length === 0 || drive.targetBranches.includes(selectedBranchFilter);
       }
 
       return true;
@@ -180,19 +207,35 @@ export const TeamsPlacementCalendar: React.FC<TeamsPlacementCalendarProps> = ({
   const drivesByDate = useMemo(() => {
     const map: Record<string, PlacementDrive[]> = {};
     visibleDrives.forEach(drive => {
-      if (!map[drive.driveDate]) {
-        map[drive.driveDate] = [];
+      const dateKey = drive.driveDate.slice(0, 10);
+      if (!map[dateKey]) {
+        map[dateKey] = [];
       }
-      map[drive.driveDate].push(drive);
+      map[dateKey].push(drive);
     });
     return map;
   }, [visibleDrives]);
 
+  const sortedVisibleDrives = useMemo(
+    () => [...visibleDrives].sort((a, b) =>
+      `${a.driveDate.slice(0, 10)} ${a.startTime || ''}`
+        .localeCompare(`${b.driveDate.slice(0, 10)} ${b.startTime || ''}`)
+    ),
+    [visibleDrives]
+  );
+
+  const monthHasDrives = sortedVisibleDrives.some(drive =>
+    drive.driveDate.slice(0, 7) === `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}`
+  );
+
   // Handle scheduling form submit
-  const handleScheduleSubmit = (e: React.FormEvent) => {
+  const handleScheduleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!canSchedule) {
-      alert('Access Denied: Only PCC (Placement Coordination Cell) can schedule placement drives.');
+    if (!canSchedule || isSavingRef.current) return;
+    setMeetingSaveError('');
+    setMeetingSaveSuccess('');
+    if (driveLoadState !== 'success') {
+      setMeetingSaveError('Load the current placement schedule before creating a meeting. Retry the calendar request, then try again.');
       return;
     }
 
@@ -201,46 +244,65 @@ export const TeamsPlacementCalendar: React.FC<TeamsPlacementCalendarProps> = ({
       .map(s => s.trim())
       .filter(Boolean);
 
-    const newDrive: PlacementDrive = {
-      id: `drv_teams_${Date.now()}`,
-      driveCode: `DRV-2026-${companyName.substring(0, 3).toUpperCase()}-${Math.floor(10 + Math.random() * 90)}`,
-      companyId: `c_${Date.now()}`,
-      companyName,
-      roleTitle,
+    const selectedCompany = companies.find(company => company.name === companyName);
+    if (!selectedCompany) {
+      setMeetingSaveError('Choose a company registered in the portal before scheduling.');
+      return;
+    }
+    if (!onAddDrive) {
+      setMeetingSaveError('The calendar could not connect to the saved meeting list. Refresh and try again.');
+      return;
+    }
+
+    const payload = {
+      companyId: selectedCompany.id,
+      roleTitle: roleTitle.trim(),
       ctcLPA: Number(ctcLPA),
-      targetBranches,
       minCGPA: Number(minCGPA),
       maxBacklogsAllowed: Number(maxBacklogsAllowed),
       driveDate,
       startTime,
       endTime,
-      meetingType,
-      teamsMeetingLink,
-      venue,
-      status: 'Upcoming',
-      isPublished: true,
-      scheduledBy: `${currentUser.name} (${currentUser.designation || 'PCC Officer'})`,
-      companyInfo,
-      jobDescription,
+      meetingType: meetingType || 'Campus Placement Drive',
+      teamsMeetingLink: teamsMeetingLink.trim(),
+      venue: venue.trim(),
+      targetBranches,
       requiredSkills: skillsArray,
-      eligibleStudentCount: 220,
-      enrolledCount: 0,
-      shortlistedCount: 0,
-      rounds: [
-        {
-          roundNumber: 1,
-          roundName: 'Pre-Placement Talk (PPT) & Online Assessment',
-          date: `${driveDate} ${startTime}`,
-          venue: venue,
-          qualifiedStudents: []
-        }
-      ]
+      jobDescription,
+      status: 'Upcoming' as const,
+      isPublished: true,
+      rounds: [{
+        roundNumber: 1,
+        roundName: meetingType || 'Campus Placement Drive',
+        date: driveDate,
+        venue: venue.trim()
+      }]
     };
-
-    if (onAddDrive) {
-      onAddDrive(newDrive);
+    const fingerprint = JSON.stringify(payload);
+    if (idempotencyRequest.current?.fingerprint !== fingerprint) {
+      idempotencyRequest.current = {
+        fingerprint,
+        key: crypto.randomUUID()
+      };
     }
-    setShowScheduleModal(false);
+
+    isSavingRef.current = true;
+    setIsSavingMeeting(true);
+    try {
+      const savedDrive = await createPlacementDrive(payload, idempotencyRequest.current.key);
+      idempotencyRequest.current = null;
+      onAddDrive(savedDrive);
+      setMeetingSaveSuccess('Meeting saved to PostgreSQL and added to the calendar.');
+      setShowScheduleModal(false);
+    } catch (error) {
+      console.error('Meeting schedule save failed:', error);
+      setMeetingSaveError(
+        error instanceof Error ? error.message : 'Unable to save the scheduled meeting.'
+      );
+    } finally {
+      isSavingRef.current = false;
+      setIsSavingMeeting(false);
+    }
   };
 
   const toggleBranchSelection = (code: string) => {
@@ -288,7 +350,7 @@ export const TeamsPlacementCalendar: React.FC<TeamsPlacementCalendarProps> = ({
             ) : (
               <div className="px-3 py-1.5 bg-white/10 rounded-xl text-[11px] text-[#E4F2EA] flex items-center gap-1.5 border border-white/10">
                 <Lock className="w-3.5 h-3.5 text-[#E2A54D]" />
-                <span>Scheduling: PCC Only</span>
+                <span>Scheduling: PCC, Placement Dean, and Admin</span>
               </div>
             )}
           </div>
@@ -316,12 +378,48 @@ export const TeamsPlacementCalendar: React.FC<TeamsPlacementCalendarProps> = ({
           <div className="flex items-center gap-1.5 font-mono text-[11px] text-[#E4F2EA]">
             <span>{visibleDrives.length} Visible</span>
             <span>·</span>
-            <span>2026 Batch</span>
+            <span>Dates and times: IST</span>
           </div>
         </div>
       </div>
 
       {/* Calendar Controls & Navigation Bar */}
+      {meetingSaveSuccess && (
+        <p role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs font-medium text-emerald-800">
+          {meetingSaveSuccess}
+        </p>
+      )}
+      {driveLoadState === 'loading' && (
+        <p role="status" className="rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-3 text-xs text-indigo-800">
+          Loading placement meetings…
+        </p>
+      )}
+      {driveLoadState === 'success' && visibleDrives.length > 0 && (
+        <p role="status" className="text-[11px] text-emerald-800">
+          Loaded {visibleDrives.length} meeting{visibleDrives.length === 1 ? '' : 's'} available to your role and filters.
+        </p>
+      )}
+      {driveLoadState === 'error' && (
+        <div role="alert" className="flex items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-800">
+          <span>{driveLoadError || 'Unable to load placement meetings.'}</span>
+          {onRetryDrives && (
+            <button type="button" onClick={onRetryDrives} className="shrink-0 font-bold underline">
+              Retry
+            </button>
+          )}
+        </div>
+      )}
+      {driveLoadState === 'success' && visibleDrives.length === 0 && (
+        <p role="status" className="rounded-lg border border-slate-200 bg-white px-4 py-3 text-xs text-slate-600">
+          No meetings are available for your role, department, and current filters.
+        </p>
+      )}
+      {meetingSaveError && (
+        <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-800">
+          {meetingSaveError}
+        </p>
+      )}
+
       <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-3">
         
         {/* Month Navigator */}
@@ -432,6 +530,12 @@ export const TeamsPlacementCalendar: React.FC<TeamsPlacementCalendarProps> = ({
             <div>Sat</div>
           </div>
 
+          {driveLoadState === 'success' && visibleDrives.length > 0 && !monthHasDrives && (
+            <p className="px-4 py-3 text-center text-xs text-slate-500">
+              No meetings scheduled in {monthNames[currentMonth]} {currentYear}. Use the arrows or Today to change months.
+            </p>
+          )}
+
           {/* Month day cells */}
           <div className="grid grid-cols-7 auto-rows-fr divide-x divide-y divide-slate-200">
             {/* Blank offset days from previous month */}
@@ -446,7 +550,7 @@ export const TeamsPlacementCalendar: React.FC<TeamsPlacementCalendarProps> = ({
               const dayNum = i + 1;
               const dateString = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`;
               const dayDrives = drivesByDate[dateString] || [];
-              const isToday = currentYear === 2026 && currentMonth === 9 && dayNum === 1;
+              const isToday = dateString === todayDateInIST;
 
               return (
                 <div
@@ -483,7 +587,7 @@ export const TeamsPlacementCalendar: React.FC<TeamsPlacementCalendarProps> = ({
                         <div className="flex items-center justify-between text-[10px] text-slate-500">
                           <span className="font-mono font-semibold text-indigo-700 flex items-center gap-0.5">
                             <Clock className="w-2.5 h-2.5" />
-                            {drive.startTime || '09:30 AM'}
+                            {formatMeetingTimeIST(drive.startTime)}
                           </span>
                           <span className="font-mono font-bold text-emerald-700">
                             ₹{drive.ctcLPA} LPA
@@ -542,7 +646,7 @@ export const TeamsPlacementCalendar: React.FC<TeamsPlacementCalendarProps> = ({
               No placement meetings or company visits scheduled for your criteria.
             </div>
           ) : (
-            visibleDrives.map(drive => (
+            sortedVisibleDrives.map(drive => (
               <div
                 key={drive.id}
                 className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs hover:border-indigo-300 transition-all flex flex-col md:flex-row md:items-center justify-between gap-4 border-l-4 border-l-indigo-600"
@@ -554,7 +658,12 @@ export const TeamsPlacementCalendar: React.FC<TeamsPlacementCalendarProps> = ({
                     </span>
                     <span className="text-xs font-semibold text-slate-600 flex items-center gap-1">
                       <CalendarIcon className="w-3.5 h-3.5 text-slate-400" />
-                      {drive.driveDate} ({drive.startTime || '09:30 AM'} - {drive.endTime || '05:00 PM'})
+                      {formatDriveDate(drive.driveDate.slice(0, 10))} ({formatMeetingTimeIST(drive.startTime)} - {formatMeetingTimeIST(drive.endTime)})
+                    </span>
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase ${
+                      isPastMeetingInIST(drive.driveDate, drive.endTime) ? 'bg-slate-100 text-slate-600' : 'bg-blue-50 text-blue-700'
+                    }`}>
+                      {isPastMeetingInIST(drive.driveDate, drive.endTime) ? 'Past' : 'Upcoming'}
                     </span>
                     <span className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase ${
                       drive.status === 'In Progress' ? 'bg-amber-100 text-amber-800' :
@@ -673,12 +782,12 @@ export const TeamsPlacementCalendar: React.FC<TeamsPlacementCalendarProps> = ({
                 <div className="space-y-1.5">
                   <div className="flex items-center gap-2 text-slate-900 font-bold text-sm">
                     <CalendarIcon className="w-4 h-4 text-indigo-600" />
-                    <span>Scheduled for: {selectedDriveModal.driveDate}</span>
+                    <span>Scheduled for: {formatDriveDate(selectedDriveModal.driveDate.slice(0, 10))}</span>
                   </div>
                   <div className="flex items-center gap-3 text-slate-600 text-xs">
                     <span className="flex items-center gap-1">
                       <Clock className="w-3.5 h-3.5 text-slate-400" />
-                      {selectedDriveModal.startTime || '09:30 AM'} - {selectedDriveModal.endTime || '05:00 PM'}
+                      {formatMeetingTimeIST(selectedDriveModal.startTime)} - {formatMeetingTimeIST(selectedDriveModal.endTime)}
                     </span>
                     <span>·</span>
                     <span className="flex items-center gap-1">
@@ -857,14 +966,18 @@ export const TeamsPlacementCalendar: React.FC<TeamsPlacementCalendarProps> = ({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block font-bold text-slate-700 mb-1">Company Name *</label>
-                  <input
-                    type="text"
-                    required
+                  <select
                     value={companyName}
                     onChange={(e) => setCompanyName(e.target.value)}
+                    required
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 font-medium"
-                    placeholder="e.g. Google India / Apple / Cisco"
-                  />
+                    disabled={companies.length === 0 || isSavingMeeting}
+                  >
+                    {companies.length === 0 && <option value="">No companies available</option>}
+                    {companies.map(company => (
+                      <option key={company.id} value={company.name}>{company.name}</option>
+                    ))}
+                  </select>
                 </div>
 
                 <div>
@@ -922,24 +1035,24 @@ export const TeamsPlacementCalendar: React.FC<TeamsPlacementCalendarProps> = ({
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">Start Time</label>
+                  <label className="block font-bold text-slate-700 mb-1">Start Time (IST)</label>
                   <input
-                    type="text"
+                    type="time"
                     value={startTime}
                     onChange={(e) => setStartTime(e.target.value)}
+                    required
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg font-mono"
-                    placeholder="e.g. 09:30 AM"
                   />
                 </div>
 
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">End Time</label>
+                  <label className="block font-bold text-slate-700 mb-1">End Time (IST)</label>
                   <input
-                    type="text"
+                    type="time"
                     value={endTime}
                     onChange={(e) => setEndTime(e.target.value)}
+                    required
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg font-mono"
-                    placeholder="e.g. 05:00 PM"
                   />
                 </div>
               </div>
@@ -1064,21 +1177,31 @@ export const TeamsPlacementCalendar: React.FC<TeamsPlacementCalendarProps> = ({
                 </span>
               </div>
 
+              {meetingSaveError && (
+                <p role="alert" className="rounded border border-red-200 bg-red-50 px-3 py-2 text-red-700">
+                  {meetingSaveError}
+                </p>
+              )}
+
               {/* Action buttons */}
               <div className="pt-3 border-t border-slate-200 flex items-center justify-end gap-3">
                 <button
                   type="button"
-                  onClick={() => setShowScheduleModal(false)}
+                  onClick={() => {
+                    setMeetingSaveError('');
+                    setShowScheduleModal(false);
+                  }}
                   className="px-4 py-2 border border-slate-300 hover:bg-slate-100 text-slate-700 rounded-lg font-semibold"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg shadow-sm flex items-center gap-2"
+                  disabled={isSavingMeeting || companies.length === 0 || targetBranches.length === 0}
+                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold rounded-lg shadow-sm flex items-center gap-2"
                 >
                   <Send className="w-4 h-4" />
-                  <span>Publish Drive Meeting to Calendar</span>
+                  <span>{isSavingMeeting ? 'Saving Meeting…' : 'Publish Drive Meeting to Calendar'}</span>
                 </button>
               </div>
 

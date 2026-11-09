@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { UserAccount, StudentProfile, OfferDetails, PlacementDrive } from '../../types';
+import { UserAccount, StudentProfile, OfferDetails, PlacementDrive, DriveLoadState } from '../../types';
 import { TeamsPlacementCalendar } from '../common/TeamsPlacementCalendar';
 import { 
   UserCheck, 
@@ -19,6 +19,9 @@ interface FPCDashboardProps {
   user: UserAccount;
   students: StudentProfile[];
   drives?: PlacementDrive[];
+  driveLoadState: DriveLoadState;
+  driveLoadError: string;
+  onRetryDrives: () => void;
   onVerifyOffer?: (studentUsn: string, offerId: string) => void;
   onAddOffer?: (studentUsn: string, offer: OfferDetails) => void;
 }
@@ -26,7 +29,10 @@ interface FPCDashboardProps {
 export const FPCDashboard: React.FC<FPCDashboardProps> = ({
   user,
   students,
-  drives = []
+  drives = [],
+  driveLoadState,
+  driveLoadError,
+  onRetryDrives
 }) => {
   const fpcDept = user.department || 'CSE';
   const deptStudents = students.filter(s => s.department === fpcDept);
@@ -99,6 +105,9 @@ export const FPCDashboard: React.FC<FPCDashboardProps> = ({
         <TeamsPlacementCalendar
           currentUser={user}
           drives={drives}
+          driveLoadState={driveLoadState}
+          driveLoadError={driveLoadError}
+          onRetryDrives={onRetryDrives}
         />
       )}
 

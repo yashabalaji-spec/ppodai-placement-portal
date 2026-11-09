@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { UserAccount, StudentProfile, PlacementDrive } from '../../types';
+import { UserAccount, StudentProfile, PlacementDrive, DriveLoadState } from '../../types';
 import { TeamsPlacementCalendar } from '../common/TeamsPlacementCalendar';
 import { 
   Users, 
@@ -18,12 +18,18 @@ interface SPCDashboardProps {
   user: UserAccount;
   students: StudentProfile[];
   drives: PlacementDrive[];
+  driveLoadState: DriveLoadState;
+  driveLoadError: string;
+  onRetryDrives: () => void;
 }
 
 export const SPCDashboard: React.FC<SPCDashboardProps> = ({
   user,
   students,
-  drives
+  drives,
+  driveLoadState,
+  driveLoadError,
+  onRetryDrives
 }) => {
   const [activeTab, setActiveTab] = useState<'liaison' | 'calendar'>('liaison');
   const [broadcastMessage, setBroadcastMessage] = useState('');
@@ -96,6 +102,9 @@ export const SPCDashboard: React.FC<SPCDashboardProps> = ({
         <TeamsPlacementCalendar
           currentUser={user}
           drives={drives}
+          driveLoadState={driveLoadState}
+          driveLoadError={driveLoadError}
+          onRetryDrives={onRetryDrives}
         />
       )}
 

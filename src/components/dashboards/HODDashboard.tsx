@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { UserAccount, StudentProfile, PlacementDrive } from '../../types';
+import { UserAccount, StudentProfile, PlacementDrive, DriveLoadState } from '../../types';
 import { SectionWiseHODChart } from '../common/Charts';
 import { BRANCHES } from '../../data/mockData';
 import { TeamsPlacementCalendar } from '../common/TeamsPlacementCalendar';
@@ -30,6 +30,9 @@ interface HODDashboardProps {
   user: UserAccount;
   students: StudentProfile[];
   drives?: PlacementDrive[];
+  driveLoadState: DriveLoadState;
+  driveLoadError: string;
+  onRetryDrives: () => void;
   onApproveEditRequest?: (usn: string, remarks?: string) => void;
   onRejectEditRequest?: (usn: string, remarks: string) => void;
 }
@@ -38,6 +41,9 @@ export const HODDashboard: React.FC<HODDashboardProps> = ({
   user,
   students,
   drives = [],
+  driveLoadState,
+  driveLoadError,
+  onRetryDrives,
   onApproveEditRequest,
   onRejectEditRequest
 }) => {
@@ -172,6 +178,9 @@ export const HODDashboard: React.FC<HODDashboardProps> = ({
         <TeamsPlacementCalendar
           currentUser={user}
           drives={drives}
+          driveLoadState={driveLoadState}
+          driveLoadError={driveLoadError}
+          onRetryDrives={onRetryDrives}
         />
       )}
 

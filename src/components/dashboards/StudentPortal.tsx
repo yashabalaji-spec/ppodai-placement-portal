@@ -1,5 +1,5 @@
 import React, { useState,useEffect } from 'react';
-import { StudentProfile, StudentSkill, StudentInternship, StudentProject, StudentRnD, PlacementDrive } from '../../types';
+import { StudentProfile, StudentSkill, StudentInternship, StudentProject, StudentRnD, PlacementDrive, DriveLoadState } from '../../types';
 import { generateStudentResumePDF } from '../../services/pdfService';
 import { StudentDriveSchedule } from './StudentDriveSchedule';
 import { ResumeManager } from './ResumeManager';
@@ -38,12 +38,18 @@ interface StudentPortalProps {
   student: StudentProfile;
   drives: PlacementDrive[];
   onUpdateProfile: (updatedProfile: StudentProfile) => void;
+  driveLoadState: DriveLoadState;
+  driveLoadError: string;
+  onRetryDrives: () => void;
 }
 
 export const StudentPortal: React.FC<StudentPortalProps> = ({
   student,
   drives,
-  onUpdateProfile
+  onUpdateProfile,
+  driveLoadState,
+  driveLoadError,
+  onRetryDrives
 }) => {
   const [profile, setProfile] = useState<StudentProfile>(student);
   // Keep the dashboard profile synchronized with updated App data
@@ -404,7 +410,13 @@ const handleSave = async (e: React.FormEvent) => {
       <div id="student-tab-content" className="scroll-mt-16">
         {/* SCHEDULE VIEW */}
         {activeTab === 'schedule' && (
-          <StudentDriveSchedule student={profile} drives={drives} />
+          <StudentDriveSchedule
+            student={profile}
+            drives={drives}
+            driveLoadState={driveLoadState}
+            driveLoadError={driveLoadError}
+            onRetryDrives={onRetryDrives}
+          />
         )}
 
         {/* PLACEMENT MAILBOX & COUNTDOWN REMINDERS */}

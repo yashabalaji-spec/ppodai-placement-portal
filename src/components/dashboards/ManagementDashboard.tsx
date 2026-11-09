@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { UserAccount, StudentProfile, Company, PlacementDrive } from '../../types';
+import { UserAccount, StudentProfile, Company, PlacementDrive, DriveLoadState } from '../../types';
 import { DepartmentMultiYearChart, OfferTierDistributionChart } from '../common/Charts';
 import { TeamsPlacementCalendar } from '../common/TeamsPlacementCalendar';
 import { HISTORICAL_BATCH_METRICS, BRANCHES } from '../../data/mockData';
@@ -22,13 +22,19 @@ interface ManagementDashboardProps {
   students: StudentProfile[];
   companies: Company[];
   drives: PlacementDrive[];
+  driveLoadState: DriveLoadState;
+  driveLoadError: string;
+  onRetryDrives: () => void;
 }
 
 export const ManagementDashboard: React.FC<ManagementDashboardProps> = ({
   user,
   students,
   companies,
-  drives
+  drives,
+  driveLoadState,
+  driveLoadError,
+  onRetryDrives
 }) => {
   const currentBatch = HISTORICAL_BATCH_METRICS[2]; // 2026 season
   const isPrincipal = user.role === 'principal';
@@ -90,6 +96,10 @@ export const ManagementDashboard: React.FC<ManagementDashboardProps> = ({
         <TeamsPlacementCalendar
           currentUser={user}
           drives={drives}
+          companies={companies}
+          driveLoadState={driveLoadState}
+          driveLoadError={driveLoadError}
+          onRetryDrives={onRetryDrives}
         />
       )}
 
