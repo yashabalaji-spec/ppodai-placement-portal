@@ -35,7 +35,6 @@ interface AdminDashboardProps {
   driveLoadError: string;
   onRetryDrives: () => void;
   onAddDrive: (newDrive: PlacementDrive) => void;
-  onOpenDbArchitecture?: () => void;
 }
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({

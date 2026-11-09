@@ -9,6 +9,11 @@ import type { PoolClient } from 'pg';
 import { connectMongoDB } from './mong';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
+import {
+  canPreviewRole,
+  isRoleType,
+  ROLE_PREVIEW_ROLES
+} from './src/types';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -1931,6 +1936,88 @@ app.post('/api/auth/logout', (_req, res) => {
   res.clearCookie('ppodai_token', { path: '/' });
   return res.json({ success: true });
 });
+
+app.post(
+  '/api/auth/role-preview',
+  requireAuth,
+  requireRoles(...ROLE_PREVIEW_ROLES),
+  async (req, res) => {
+    try {
+      const user = (req as AuthenticatedRequest).authUser!;
+      const { targetRole, targetDepartment } = req.body || {};
+      const department =
+        typeof targetDepartment === 'string' ? targetDepartment.trim() : '';
+      const departmentScopedRoles = ['student', 'hod', 'fpc', 'spc'];
+
+      if (!isRoleType(user.role)) {
+        return res.status(403).json({
+          success: false,
+          message: 'Your account role is not permitted to preview roles.'
+        });
+      }
+
+      if (!isRoleType(targetRole)) {
+        return res.status(400).json({
+          success: false,
+          message: 'A valid preview role is required.'
+        });
+      }
+
+      if (
+        (targetDepartment !== undefined &&
+          targetDepartment !== null &&
+          typeof targetDepartment !== 'string') ||
+        (departmentScopedRoles.includes(targetRole) && !department)
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: 'A valid department is required for this role preview.'
+        });
+      }
+
+      if (department) {
+        const branchResult = await pool.query(
+          'SELECT branch_code FROM branches WHERE branch_code = $1 LIMIT 1',
+          [department]
+        );
+        if (branchResult.rows.length === 0) {
+          return res.status(400).json({
+            success: false,
+            message: 'The requested preview department does not exist.'
+          });
+        }
+      }
+
+      const access = canPreviewRole(
+        user.role,
+        targetRole,
+        user.department || undefined,
+        department || undefined
+      );
+      if (!access.allowed) {
+        return res.status(403).json({
+          success: false,
+          message: access.reason || 'This role preview is not permitted.'
+        });
+      }
+
+      return res.json({
+        success: true,
+        preview: {
+          role: targetRole,
+          department: department || null
+        },
+        message: 'Preview authorized. Your authenticated account and permissions are unchanged.'
+      });
+    } catch (error) {
+      console.error('Role preview authorization failed:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to authorize this role preview.'
+      });
+    }
+  }
+);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {

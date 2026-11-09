@@ -2,21 +2,18 @@ import React from 'react';
 import { UserAccount, RoleType } from '../types';
 import { GatLogo } from './common/GatLogo';
 import { 
-  Building2, 
   Users, 
   ChevronDown, 
-  Database, 
   LogOut, 
   Menu, 
   X,
-  FileCheck2,
   Lock
 } from 'lucide-react';
 
 interface NavbarProps {
   currentUser: UserAccount;
+  canSwitchRole: boolean;
   onOpenRoleSwitcher: () => void;
-  onOpenDbArchitecture: () => void;
   onLogout: () => void;
   mobileMenuOpen: boolean;
   setMobileMenuOpen: (open: boolean) => void;
@@ -37,8 +34,8 @@ export const ROLE_LABELS: Record<RoleType, { title: string; set: string; badgeCo
 
 export const Navbar: React.FC<NavbarProps> = ({
   currentUser,
+  canSwitchRole,
   onOpenRoleSwitcher,
-  onOpenDbArchitecture,
   onLogout,
   mobileMenuOpen,
   setMobileMenuOpen
@@ -63,29 +60,29 @@ export const Navbar: React.FC<NavbarProps> = ({
             </div>
           </div>
 
-          {/* Navigation Tools */}
-          <div className="hidden md:flex items-center gap-2">
-            <button
-              onClick={onOpenDbArchitecture}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-[#0C2C47] hover:text-[#0C2C47] bg-[#E4F2EA] hover:bg-[#97D3CD]/40 rounded-lg transition-colors border border-[#97D3CD]/60 cursor-pointer"
-              title="Database Schema & Architecture"
-            >
-              <Database className="w-3.5 h-3.5 text-[#2D5652]" />
-              <span>DB Schema</span>
-            </button>
-          </div>
-
           {/* Active User Controls */}
           <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
-            <button
-              onClick={onOpenRoleSwitcher}
-              className={`flex items-center gap-1.5 sm:gap-2 px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-lg border transition-all text-left max-w-[170px] sm:max-w-xs ${
-                currentUser.role === 'student'
-                  ? 'border-[#E2A54D]/60 bg-[#EFEAE6]/60 hover:bg-[#EFEAE6] cursor-pointer'
-                  : 'border-[#97D3CD]/60 hover:border-[#2D5652] bg-white hover:bg-[#E4F2EA]/40'
-              }`}
-              title={currentUser.role === 'student' ? 'Student Session Active' : 'Switch Role'}
-            >
+            {canSwitchRole ? (
+              <button
+                onClick={onOpenRoleSwitcher}
+                className="flex items-center gap-1.5 sm:gap-2 px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-lg border border-[#97D3CD]/60 hover:border-[#2D5652] bg-white hover:bg-[#E4F2EA]/40 transition-all text-left max-w-[170px] sm:max-w-xs"
+                title="Preview another role"
+              >
+                <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-full bg-[#E4F2EA] text-[#0C2C47] flex items-center justify-center font-bold text-xs uppercase shrink-0">
+                  {currentUser.name.charAt(0)}
+                </div>
+                <div className="min-w-0">
+                  <div className="text-xs font-semibold text-[#0C2C47] leading-tight flex items-center gap-1">
+                    <span className="truncate">{currentUser.name}</span>
+                    <ChevronDown className="w-3 h-3 text-[#2D5652]/70 shrink-0" />
+                  </div>
+                  <div className="text-[10px] text-[#2D5652] leading-tight truncate hidden sm:block">
+                    {roleInfo.title} · <span className="font-mono font-medium text-[#0C2C47]">{currentUser.specialId}</span>
+                  </div>
+                </div>
+              </button>
+            ) : (
+              <div className="flex items-center gap-1.5 sm:gap-2 px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-lg border border-[#97D3CD]/40 text-left max-w-[170px] sm:max-w-xs">
               <div className={`w-6 h-6 sm:w-7 sm:h-7 rounded-full flex items-center justify-center font-bold text-xs uppercase shrink-0 ${
                 currentUser.role === 'student' ? 'bg-[#E2A54D]/30 text-[#0C2C47]' : 'bg-[#E4F2EA] text-[#0C2C47]'
               }`}>
@@ -96,15 +93,14 @@ export const Navbar: React.FC<NavbarProps> = ({
                   <span className="truncate">{currentUser.name}</span>
                   {currentUser.role === 'student' ? (
                     <Lock className="w-3 h-3 text-[#E2A54D] shrink-0" />
-                  ) : (
-                    <ChevronDown className="w-3 h-3 text-[#2D5652]/70 shrink-0" />
-                  )}
+                  ) : null}
                 </div>
                 <div className="text-[10px] text-[#2D5652] leading-tight truncate hidden sm:block">
                   {roleInfo.title} · <span className="font-mono font-medium text-[#0C2C47]">{currentUser.specialId}</span>
                 </div>
               </div>
-            </button>
+              </div>
+            )}
 
             {/* Logout button */}
             <button
@@ -136,30 +132,21 @@ export const Navbar: React.FC<NavbarProps> = ({
             Active: <span className="font-bold text-[#0C2C47]">{currentUser.name}</span> ({roleInfo.title}) · <span className="font-mono text-[#0C2C47]">{currentUser.specialId}</span>
           </div>
           <div className="flex flex-col gap-1.5 pt-1">
-            <button
-              onClick={() => {
-                onOpenRoleSwitcher();
-                setMobileMenuOpen(false);
-              }}
-              className="w-full text-left px-3 py-2 text-xs font-semibold text-[#0C2C47] bg-white border border-[#97D3CD]/50 rounded-lg flex items-center justify-between"
-            >
-              <span className="flex items-center gap-2">
-                <Users className="w-4 h-4 text-[#2D5652]" />
-                Switch Role
-              </span>
-              <ChevronDown className="w-3.5 h-3.5 text-[#2D5652]" />
-            </button>
-
-            <button
-              onClick={() => {
-                onOpenDbArchitecture();
-                setMobileMenuOpen(false);
-              }}
-              className="w-full text-left px-3 py-2 text-xs font-semibold text-[#0C2C47] bg-white border border-[#97D3CD]/50 rounded-lg flex items-center gap-2"
-            >
-              <Database className="w-4 h-4 text-[#2D5652]" />
-              Database Architecture
-            </button>
+            {canSwitchRole && (
+              <button
+                onClick={() => {
+                  onOpenRoleSwitcher();
+                  setMobileMenuOpen(false);
+                }}
+                className="w-full text-left px-3 py-2 text-xs font-semibold text-[#0C2C47] bg-white border border-[#97D3CD]/50 rounded-lg flex items-center justify-between"
+              >
+                <span className="flex items-center gap-2">
+                  <Users className="w-4 h-4 text-[#2D5652]" />
+                  Preview Role
+                </span>
+                <ChevronDown className="w-3.5 h-3.5 text-[#2D5652]" />
+              </button>
+            )}
 
             <button
               onClick={() => {

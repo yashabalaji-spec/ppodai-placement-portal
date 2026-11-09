@@ -310,6 +310,63 @@ export function checkRoleAccess(
   return { allowed: false, reason: '🔒 Access Locked: Role transition not permitted under GAT PPODAI RBAC policy.' };
 }
 
+export const ROLE_PREVIEW_ROLES = [
+  'admin',
+  'pcc',
+  'fpc',
+  'faculty_mgmt',
+  'placement_dean',
+  'hod',
+  'principal'
+] as const satisfies readonly RoleType[];
+
+export function isRoleType(value: unknown): value is RoleType {
+  const roles: RoleType[] = [
+    'faculty_mgmt',
+    'principal',
+    'placement_dean',
+    'hod',
+    'pcc',
+    'fpc',
+    'spc',
+    'student',
+    'hr',
+    'admin'
+  ];
+  return typeof value === 'string' && roles.some(role => role === value);
+}
+
+export function canStartRolePreview(role: RoleType): boolean {
+  return ROLE_PREVIEW_ROLES.some(allowedRole => allowedRole === role);
+}
+
+export function canPreviewRole(
+  currentRole: RoleType,
+  targetRole: RoleType,
+  currentDept?: string,
+  targetDept?: string
+): { allowed: boolean; reason?: string } {
+  if (!canStartRolePreview(currentRole)) {
+    return {
+      allowed: false,
+      reason: 'Your role is not permitted to start role previews.'
+    };
+  }
+
+  if (
+    currentRole === 'hod' &&
+    ['hod', 'student', 'fpc', 'spc'].includes(targetRole) &&
+    (!currentDept || !targetDept)
+  ) {
+    return {
+      allowed: false,
+      reason: 'A department must be established to enforce HOD preview restrictions.'
+    };
+  }
+
+  return checkRoleAccess(currentRole, targetRole, currentDept, targetDept);
+}
+
 export interface Company {
   id: string;
   name: string;

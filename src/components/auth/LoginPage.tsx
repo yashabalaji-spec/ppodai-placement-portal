@@ -17,20 +17,15 @@ import {
   CheckCircle2, 
   AlertCircle,
   ArrowRight,
-  Database,
   Building,
   UserCheck
 } from 'lucide-react';
 
 interface LoginPageProps {
   onLoginSuccess: (user: UserAccount) => void;
-  onOpenDbArchitecture: () => void;
 }
 
-export const LoginPage: React.FC<LoginPageProps> = ({
-  onLoginSuccess,
-  onOpenDbArchitecture
-}) => {
+export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
   // 4 iconic visual modes from the uploaded images
   const [activePortalMode, setActivePortalMode] = useState<PortalMode>('student');
 
@@ -230,14 +225,6 @@ const handleResetPassword = async () => {
         <div className="max-w-7xl mx-auto flex items-center justify-between gap-3">
           <GatLogo size="md" showSubtitle={true} />
 
-          <button
-            onClick={onOpenDbArchitecture}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-[#0C2C47] bg-[#E4F2EA] hover:bg-[#97D3CD]/40 rounded-lg border border-[#97D3CD]/60 transition-colors shrink-0 cursor-pointer"
-            title="Database Schema & Architecture"
-          >
-            <Database className="w-3.5 h-3.5 text-[#2D5652]" />
-            <span className="hidden sm:inline">DB Architecture</span>
-          </button>
         </div>
       </header>
 

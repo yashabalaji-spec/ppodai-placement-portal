@@ -4,11 +4,19 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { UserAccount, StudentProfile, Company, PlacementDrive, RoleType, DriveLoadState, checkRoleAccess } from './types';
+import {
+  UserAccount,
+  StudentProfile,
+  Company,
+  PlacementDrive,
+  RoleType,
+  DriveLoadState,
+  canPreviewRole,
+  canStartRolePreview
+} from './types';
 import { INITIAL_USERS, INITIAL_STUDENTS, INITIAL_COMPANIES, INITIAL_DRIVES } from './data/mockData';
 import { Navbar, ROLE_LABELS } from './components/Navbar';
 import { RoleSwitcherModal } from './components/RoleSwitcherModal';
-import { DatabaseArchitectureModal } from './components/common/DatabaseArchitectureModal';
 import { AccessDeniedModal } from './components/common/AccessDeniedModal';
 
 import { ManagementDashboard } from './components/dashboards/ManagementDashboard';
@@ -40,6 +48,8 @@ const [isCheckingSession, setIsCheckingSession] = useState(true);
 
 // Placeholder user until the backend verifies the session
 const [currentUser, setCurrentUser] = useState<UserAccount>(INITIAL_USERS[7]);
+const [authenticatedUser, setAuthenticatedUser] = useState<UserAccount | null>(null);
+const [isRolePreviewMode, setIsRolePreviewMode] = useState(false);
 
  // Students are loaded from PostgreSQL after authentication.
 const [students, setStudents] = useState<StudentProfile[]>([]);
@@ -58,7 +68,6 @@ const [driveRefreshVersion, setDriveRefreshVersion] = useState(0);
 
   // Modals
   const [roleSwitcherOpen, setRoleSwitcherOpen] = useState(false);
-  const [dbArchitectureOpen, setDbArchitectureOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   // Access Denied Modal State
@@ -82,6 +91,7 @@ useEffect(() => {
       if (response.ok) {
         const data = await response.json();
         setCurrentUser(data.user);
+        setAuthenticatedUser(data.user);
         setIsAuthenticated(true);
       }
     } catch (error) {
@@ -96,6 +106,11 @@ useEffect(() => {
 
   // Load the logged-in student's profile from PostgreSQL.
   useEffect(() => {
+    if (isRolePreviewMode) {
+      setStudentProfileLoadState(null);
+      return;
+    }
+
     if (!isAuthenticated || currentUser.role !== 'student') {
       setStudentProfileLoadState(null);
       return;
@@ -149,7 +164,7 @@ useEffect(() => {
     return () => {
       isActive = false;
     };
-  }, [isAuthenticated, currentUser.role, currentUser.usn]);
+  }, [isAuthenticated, currentUser.role, currentUser.usn, isRolePreviewMode]);
 // Load authorised student records for staff dashboards.
 useEffect(() => {
   if (!isAuthenticated || currentUser.role === 'student') {
@@ -288,6 +303,8 @@ useEffect(() => {
       setStudentProfileLoadState(null);
     }
     setCurrentUser(user);
+    setAuthenticatedUser(user);
+    setIsRolePreviewMode(false);
     setIsAuthenticated(true);
   };
 
@@ -302,6 +319,8 @@ useEffect(() => {
   } finally {
     setIsAuthenticated(false);
     setCurrentUser(INITIAL_USERS[7]);
+    setAuthenticatedUser(null);
+    setIsRolePreviewMode(false);
     setAccessDeniedData({ isOpen: false, reason: '' });
   }
 };
@@ -347,7 +366,13 @@ useEffect(() => {
       setStudents(INITIAL_STUDENTS);
       setDrives(INITIAL_DRIVES);
       setCompanies(INITIAL_COMPANIES);
-      setCurrentUser(INITIAL_USERS[7]); // Student
+      void handleRoleSelect(INITIAL_USERS[7]).catch(error => {
+        setAccessDeniedData({
+          isOpen: true,
+          reason: error instanceof Error ? error.message : 'Student preview is not permitted.',
+          targetRole: 'student'
+        });
+      });
     }
   };
 
@@ -365,35 +390,59 @@ useEffect(() => {
     { role: 'admin', label: 'Admin', color: 'border-slate-300 text-[#0C2C47] bg-slate-100' },
   ];
 
-  // RBAC Access-controlled Quick Switcher
-  const handleQuickSwitch = (role: RoleType) => {
-    const access = checkRoleAccess(currentUser.role, role, currentUser.department);
-    if (!access.allowed) {
-      setAccessDeniedData({
-        isOpen: true,
-        reason: access.reason || 'Access Locked under GAT Security Policy.',
-        targetRole: role
-      });
-      return;
+  const handleRoleSelect = async (targetUser: UserAccount) => {
+    if (!authenticatedUser) {
+      throw new Error('Your authenticated account could not be verified.');
     }
 
-    const user = INITIAL_USERS.find(u => u.role === role);
-    if (user) {
-      setCurrentUser(user);
+    const access = canPreviewRole(
+      authenticatedUser.role,
+      targetUser.role,
+      authenticatedUser.department,
+      targetUser.department
+    );
+    if (!access.allowed) {
+      throw new Error(access.reason || 'This role preview is not permitted.');
+    }
+
+    const response = await fetch('/api/auth/role-preview', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({
+        targetRole: targetUser.role,
+        targetDepartment: targetUser.department || null
+      })
+    });
+    const result = await response.json() as { success?: boolean; message?: string };
+    if (!response.ok || !result.success) {
+      throw new Error(result.message || 'The server rejected this role preview.');
+    }
+
+    setCurrentUser(targetUser);
+    setIsRolePreviewMode(true);
+  };
+
+  const handleQuickSwitch = async (role: RoleType) => {
+    const targetUser = INITIAL_USERS.find(user => user.role === role);
+    if (!targetUser) return;
+
+    try {
+      await handleRoleSelect(targetUser);
+    } catch (error) {
+      setAccessDeniedData({
+        isOpen: true,
+        reason: error instanceof Error ? error.message : 'This role preview is not permitted.',
+        targetRole: role
+      });
     }
   };
 
-  const handleRoleSelect = (targetUser: UserAccount) => {
-    const access = checkRoleAccess(currentUser.role, targetUser.role, currentUser.department, targetUser.department);
-    if (!access.allowed) {
-      setAccessDeniedData({
-        isOpen: true,
-        reason: access.reason || 'Access Locked under GAT Security Policy.',
-        targetRole: targetUser.role
-      });
-      return;
-    }
-    setCurrentUser(targetUser);
+  const handleExitRolePreview = () => {
+    if (!authenticatedUser) return;
+    setCurrentUser(authenticatedUser);
+    setIsRolePreviewMode(false);
+    setRoleSwitcherOpen(false);
   };
 
   // Find active student object if student role is active
@@ -401,9 +450,22 @@ const activeStudentProfile = students.find(
   s => s.usn === currentUser.usn
 );
 const currentStudentProfileLoadState =
-  studentProfileLoadState?.usn === currentUser.usn
-    ? studentProfileLoadState
-    : null;
+  isRolePreviewMode && currentUser.role === 'student'
+    ? activeStudentProfile
+      ? { usn: currentUser.usn, status: 'success' as const }
+      : {
+          usn: currentUser.usn,
+          status: 'error' as const,
+          message: 'Student data is not available in the current role preview.'
+        }
+    : studentProfileLoadState?.usn === currentUser.usn
+      ? studentProfileLoadState
+      : null;
+const roleSwitcherAvailable = Boolean(
+  authenticatedUser &&
+  canStartRolePreview(authenticatedUser.role) &&
+  (!isRolePreviewMode || canStartRolePreview(currentUser.role))
+);
    // Wait until the backend verifies the existing session
 if (isCheckingSession) {
   return (
@@ -414,19 +476,7 @@ if (isCheckingSession) {
 }
   // If not authenticated, show the special ID & password Login Page!
   if (!isAuthenticated) {
-    return (
-      <>
-        <LoginPage
-          onLoginSuccess={handleLoginSuccess}
-          onOpenDbArchitecture={() => setDbArchitectureOpen(true)}
-        />
-        {/* Database Schema & Architecture Modal */}
-        <DatabaseArchitectureModal
-          isOpen={dbArchitectureOpen}
-          onClose={() => setDbArchitectureOpen(false)}
-        />
-      </>
-    );
+    return <LoginPage onLoginSuccess={handleLoginSuccess} />;
   }
 
   return (
@@ -435,25 +485,40 @@ if (isCheckingSession) {
       {/* Top Navbar */}
       <Navbar
         currentUser={currentUser}
+        canSwitchRole={roleSwitcherAvailable}
         onOpenRoleSwitcher={() => {
-          if (currentUser.role === 'student') {
-            setAccessDeniedData({
-              isOpen: true,
-              reason: 'Locked: Student access is confined to Student Portal. Please log out to switch account.',
-              targetRole: 'faculty_mgmt'
-            });
-          } else {
+          if (roleSwitcherAvailable) {
             setRoleSwitcherOpen(true);
           }
         }}
-        onOpenDbArchitecture={() => setDbArchitectureOpen(true)}
         onLogout={handleLogout}
         mobileMenuOpen={mobileMenuOpen}
         setMobileMenuOpen={setMobileMenuOpen}
       />
 
+      {isRolePreviewMode && authenticatedUser && (
+        <div
+          role="status"
+          className="bg-amber-100 border-b border-amber-300 px-4 py-2"
+        >
+          <div className="max-w-7xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-amber-950">
+            <p>
+              <strong>Preview Mode:</strong> Viewing the {ROLE_LABELS[currentUser.role].title} dashboard.
+              {' '}You remain authenticated as {ROLE_LABELS[authenticatedUser.role].title}; backend permissions are unchanged.
+            </p>
+            <button
+              type="button"
+              onClick={handleExitRolePreview}
+              className="self-start sm:self-auto px-3 py-1.5 rounded-md bg-amber-900 text-white font-semibold hover:bg-amber-800"
+            >
+              Exit Preview · Return to {ROLE_LABELS[authenticatedUser.role].title}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* STUDENT SESSION BAR */}
-      {currentUser.role === 'student' ? (
+      {currentUser.role === 'student' && !isRolePreviewMode ? (
         <div className="bg-[#EFEAE6] border-b border-[#E2A54D]/40 px-4 py-2">
           <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2 text-xs">
             <div className="flex items-center gap-2 text-[#0C2C47] font-semibold">
@@ -471,25 +536,32 @@ if (isCheckingSession) {
             </button>
           </div>
         </div>
-      ) : (
-        /* Role Switcher Strip for Staff / Faculty */
+      ) : roleSwitcherAvailable ? (
         <div className="bg-white border-b border-[#97D3CD]/30 px-4 py-2 overflow-x-auto no-scrollbar">
           <div className="max-w-7xl mx-auto flex items-center justify-between gap-3 min-w-max text-xs">
             <div className="flex items-center gap-1.5 shrink-0 text-[#2D5652] font-semibold text-[11px] uppercase tracking-wider">
               <Layers className="w-3.5 h-3.5 text-[#2D5652]" />
-              <span>Switch Role:</span>
+              <span>Preview Dashboard:</span>
             </div>
 
             <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
               {quickRoles.map(item => {
                 const isActive = currentUser.role === item.role;
-                const access = checkRoleAccess(currentUser.role, item.role, currentUser.department);
+                const targetUser = INITIAL_USERS.find(user => user.role === item.role);
+                const access = authenticatedUser && targetUser
+                  ? canPreviewRole(
+                      authenticatedUser.role,
+                      item.role,
+                      authenticatedUser.department,
+                      targetUser.department
+                    )
+                  : { allowed: false, reason: 'Authenticated account is unavailable.' };
                 const isLocked = !access.allowed;
 
                 return (
                   <button
                     key={item.role}
-                    onClick={() => handleQuickSwitch(item.role)}
+                    onClick={() => void handleQuickSwitch(item.role)}
                     className={`px-2.5 py-1 rounded-md text-xs font-semibold border transition-all whitespace-nowrap flex items-center gap-1 cursor-pointer ${
                       isActive 
                         ? 'bg-[#0C2C47] text-white border-[#0C2C47] shadow-xs' 
@@ -517,7 +589,7 @@ if (isCheckingSession) {
             </div>
           </div>
         </div>
-      )}
+      ) : null}
 
       {/* Main Viewport Content */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-5">
@@ -647,7 +719,6 @@ if (isCheckingSession) {
             students={students}
             companies={companies}
             drives={drives}
-            onOpenDbArchitecture={() => setDbArchitectureOpen(true)}
             driveLoadState={driveLoadState}
             driveLoadError={driveLoadError}
             onRetryDrives={handleRetryDrives}
@@ -671,23 +742,19 @@ if (isCheckingSession) {
         </div>
       </footer>
 
-      {/* Role Switcher Modal */}
-      <RoleSwitcherModal
-        isOpen={roleSwitcherOpen}
-        onClose={() => setRoleSwitcherOpen(false)}
-        currentUser={currentUser}
-        onSelectUser={handleRoleSelect}
-        onAccessDenied={(reason, targetRole) => {
-          setAccessDeniedData({ isOpen: true, reason, targetRole });
-        }}
-        onLogout={handleLogout}
-      />
-
-      {/* Database Schema & Architecture Modal */}
-      <DatabaseArchitectureModal
-        isOpen={dbArchitectureOpen}
-        onClose={() => setDbArchitectureOpen(false)}
-      />
+      {roleSwitcherAvailable && authenticatedUser && (
+        <RoleSwitcherModal
+          isOpen={roleSwitcherOpen}
+          onClose={() => setRoleSwitcherOpen(false)}
+          currentUser={currentUser}
+          authorizationUser={authenticatedUser}
+          onSelectUser={handleRoleSelect}
+          onAccessDenied={(reason, targetRole) => {
+            setAccessDeniedData({ isOpen: true, reason, targetRole });
+          }}
+          onLogout={handleLogout}
+        />
+      )}
 
       {/* Access Denied / Role Locked Modal */}
       <AccessDeniedModal
@@ -695,7 +762,7 @@ if (isCheckingSession) {
         onClose={() => setAccessDeniedData({ isOpen: false, reason: '' })}
         reason={accessDeniedData.reason}
         targetRole={accessDeniedData.targetRole}
-        currentRole={currentUser.role}
+        currentRole={authenticatedUser?.role || currentUser.role}
         onLogout={handleLogout}
       />
 

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { UserAccount, RoleType, checkRoleAccess } from '../types';
+import { UserAccount, RoleType, canPreviewRole } from '../types';
 import { INITIAL_USERS, BRANCHES } from '../data/mockData';
 import { 
   X, 
@@ -20,7 +20,8 @@ interface RoleSwitcherModalProps {
   isOpen: boolean;
   onClose: () => void;
   currentUser: UserAccount;
-  onSelectUser: (user: UserAccount) => void;
+  authorizationUser: UserAccount;
+  onSelectUser: (user: UserAccount) => Promise<void>;
   onAccessDenied?: (reason: string, targetRole: RoleType) => void;
   onLogout?: () => void;
 }
@@ -29,6 +30,7 @@ export const RoleSwitcherModal: React.FC<RoleSwitcherModalProps> = ({
   isOpen,
   onClose,
   currentUser,
+  authorizationUser,
   onSelectUser,
   onAccessDenied,
   onLogout
@@ -37,11 +39,11 @@ export const RoleSwitcherModal: React.FC<RoleSwitcherModalProps> = ({
 
   if (!isOpen) return null;
 
-  const handleAttemptSwitch = (targetUser: UserAccount) => {
-    const access = checkRoleAccess(
-      currentUser.role, 
+  const handleAttemptSwitch = async (targetUser: UserAccount) => {
+    const access = canPreviewRole(
+      authorizationUser.role,
       targetUser.role, 
-      currentUser.department, 
+      authorizationUser.department,
       targetUser.department
     );
 
@@ -53,8 +55,16 @@ export const RoleSwitcherModal: React.FC<RoleSwitcherModalProps> = ({
     }
 
     setDeniedToast(null);
-    onSelectUser(targetUser);
-    onClose();
+    try {
+      await onSelectUser(targetUser);
+      onClose();
+    } catch (error) {
+      setDeniedToast(
+        error instanceof Error
+          ? error.message
+          : 'Unable to authorize this role preview.'
+      );
+    }
   };
 
   const handleSelectHOD = (branchCode: string) => {
@@ -83,7 +93,7 @@ export const RoleSwitcherModal: React.FC<RoleSwitcherModalProps> = ({
           <div className="flex items-center gap-2.5">
             <Layers className="w-5 h-5 text-[#97D3CD]" />
             <div>
-              <h2 className="text-sm sm:text-base font-bold">Switch Role</h2>
+              <h2 className="text-sm sm:text-base font-bold">Preview Role</h2>
               <p className="text-xs text-[#E4F2EA]">
                 Current: <span className="font-bold text-[#E2A54D] uppercase">{currentUser.role}</span>
                 {currentUser.department ? ` (${currentUser.department})` : ''} · ID: {currentUser.specialId}
@@ -161,7 +171,7 @@ export const RoleSwitcherModal: React.FC<RoleSwitcherModalProps> = ({
           ) : (
             <div className="p-2.5 bg-[#E4F2EA]/40 border border-[#97D3CD]/50 rounded-lg text-xs text-[#2D5652] flex items-center gap-2">
               <ShieldCheck className="w-4 h-4 text-[#2D5652] shrink-0" />
-              <span>Select a role to switch:</span>
+              <span>Select a dashboard to preview:</span>
             </div>
           )}
 
@@ -176,7 +186,7 @@ export const RoleSwitcherModal: React.FC<RoleSwitcherModalProps> = ({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               {INITIAL_USERS.filter(u => u.role === 'faculty_mgmt' || u.role === 'principal' || u.role === 'placement_dean').map(user => {
                 const isSelected = currentUser.id === user.id;
-                const access = checkRoleAccess(currentUser.role, user.role, currentUser.department, user.department);
+                const access = canPreviewRole(authorizationUser.role, user.role, authorizationUser.department, user.department);
                 const isLocked = !access.allowed;
 
                 return (
@@ -227,7 +237,7 @@ export const RoleSwitcherModal: React.FC<RoleSwitcherModalProps> = ({
                 <div className="flex flex-wrap gap-1.5 mt-2">
                   {BRANCHES.map(b => {
                     const isCurrentHOD = currentUser.role === 'hod' && currentUser.department === b.code;
-                    const access = checkRoleAccess(currentUser.role, 'hod', currentUser.department, b.code);
+                    const access = canPreviewRole(authorizationUser.role, 'hod', authorizationUser.department, b.code);
                     const isBranchLocked = !access.allowed;
 
                     return (
@@ -264,7 +274,7 @@ export const RoleSwitcherModal: React.FC<RoleSwitcherModalProps> = ({
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
               {INITIAL_USERS.filter(u => u.role === 'pcc' || u.role === 'fpc' || u.role === 'spc').map(user => {
                 const isSelected = currentUser.id === user.id;
-                const access = checkRoleAccess(currentUser.role, user.role, currentUser.department, user.department);
+                const access = canPreviewRole(authorizationUser.role, user.role, authorizationUser.department, user.department);
                 const isLocked = !access.allowed;
 
                 return (
@@ -310,7 +320,7 @@ export const RoleSwitcherModal: React.FC<RoleSwitcherModalProps> = ({
             </div>
             {INITIAL_USERS.filter(u => u.role === 'student').map(user => {
               const isSelected = currentUser.id === user.id;
-              const access = checkRoleAccess(currentUser.role, user.role, currentUser.department, user.department);
+              const access = canPreviewRole(authorizationUser.role, user.role, authorizationUser.department, user.department);
               const isLocked = !access.allowed;
 
               return (
@@ -353,7 +363,7 @@ export const RoleSwitcherModal: React.FC<RoleSwitcherModalProps> = ({
               </div>
               {INITIAL_USERS.filter(u => u.role === 'hr').map(user => {
                 const isSelected = currentUser.id === user.id;
-                const access = checkRoleAccess(currentUser.role, user.role, currentUser.department, user.department);
+                const access = canPreviewRole(authorizationUser.role, user.role, authorizationUser.department, user.department);
                 const isLocked = !access.allowed;
 
                 return (
@@ -397,7 +407,7 @@ export const RoleSwitcherModal: React.FC<RoleSwitcherModalProps> = ({
               </div>
               {INITIAL_USERS.filter(u => u.role === 'admin').map(user => {
                 const isSelected = currentUser.id === user.id;
-                const access = checkRoleAccess(currentUser.role, user.role, currentUser.department, user.department);
+                const access = canPreviewRole(authorizationUser.role, user.role, authorizationUser.department, user.department);
                 const isLocked = !access.allowed;
 
                 return (
@@ -437,7 +447,7 @@ export const RoleSwitcherModal: React.FC<RoleSwitcherModalProps> = ({
         {/* Modal Footer */}
         <div className="px-4 sm:px-6 py-3 bg-[#F8FAF9] border-t border-[#97D3CD]/30 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <span className="text-xs text-[#2D5652]">
-            Session: <strong className="text-[#0C2C47]">{currentUser.name}</strong> ({currentUser.specialId})
+            Previewing: <strong className="text-[#0C2C47]">{currentUser.name}</strong> ({currentUser.specialId}) · Authenticated as <strong>{authorizationUser.name}</strong>
           </span>
           <button
             onClick={onClose}
